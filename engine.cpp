@@ -74,11 +74,26 @@ void Engine::framebufferResizeCallback(GLFWwindow *window, int width, int height
 }
 
 void Engine::mouseButtonCallback(GLFWwindow *window, int button, int action, int mods) {
+	Engine *app = reinterpret_cast<Engine*>(glfwGetWindowUserPointer(window));
+	
 	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-		Engine *app = reinterpret_cast<Engine*>(glfwGetWindowUserPointer(window));
-
-		app->rects[0].modelMatrix = glm::translate(app->rects[0].modelMatrix, glm::vec3(10.0f, 0.0f, 0.0f));
+		app->updateMatrix(0);
 	}
+	else if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+		app->updateMatrix(1);
+	}
+}
+
+void Engine::updateMatrix(size_t matrixIndex) {
+	// Update model matrix
+	rects[matrixIndex].modelMatrix = glm::translate(rects[matrixIndex].modelMatrix, glm::vec3(10.0f, 0.0f, 0.0f));
+
+	// Compute and update mvpMatrix
+	glm::mat4 *matrix = (glm::mat4*)((uint64_t)mvpMatrices.matrix + (matrixIndex * uboAlignment));
+	*matrix = projViewMatrix * rects[matrixIndex].modelMatrix;
+
+	// All swapChainImages should now update the uniform buffer object when drawing
+	std::fill(uniformNeedsUpdate.begin(), uniformNeedsUpdate.end(), true);
 }
 
 void Engine::initVulkan() {
@@ -105,6 +120,7 @@ void Engine::initVulkan() {
 	// Vertex buffer, index buffer and uniform setup
 	createVertexBuffer();
 	createIndexBuffer();
+	getUboAlignment();
 	createUniformBuffers();
 	createDescriptorPool();
 	createDescriptorSets();
@@ -125,6 +141,17 @@ void Engine::mainLoop() {
 	fpsBuffer.fill(144.0f);
 
 	std::string title("Vulkan Test Application - ");
+
+	// Compute all mvp matrices and put them in the mvpMatrices buffer
+	for (size_t i = 0; i < rects.size(); i++) {
+		glm::mat4 *matrix = (glm::mat4*)((uint64_t)mvpMatrices.matrix + (i * uboAlignment));
+		*matrix = projViewMatrix * rects[i].modelMatrix;
+	}
+	// Initialize all uniformBufferMemory locations with the mvpMatrices buffer
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
+		updateUniformBuffer(i);
+		uniformNeedsUpdate.push_back(false);
+	}
 	   
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -150,9 +177,9 @@ void Engine::mainLoop() {
 			frameCount = 0;
 			glfwSetWindowTitle(window, fpsString.c_str());
 
-			/*for (size_t i = 0; i < 4; i++) {
-				for (size_t j = 0; j < 4; j++) {
-					std::cout << mvpMatrices[0][i][j] << " ";
+			/*for (size_t j = 0; j < 4; j++) {
+				for (size_t k = 0; k < 4; k++) {
+					std::cout << mvpMatrices.matrix[0][j][k] << " ";
 				}
 				std::cout << "\n";
 			}
@@ -182,9 +209,10 @@ void Engine::drawFrame() {
 	}
 	imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
-	UniformBufferObject ubo{};
-	ubo.mvpMatrix = projViewMatrix * rects[0].modelMatrix;
-	updateUniformBuffer(imageIndex, &ubo);
+	if (uniformNeedsUpdate[imageIndex]) {
+		updateUniformBuffer(imageIndex);
+		uniformNeedsUpdate[imageIndex] = false;
+	}
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -234,6 +262,8 @@ void Engine::drawFrame() {
 
 void Engine::cleanup() {
 	cleanupSwapChain();
+
+	_aligned_free(mvpMatrices.matrix);
 
 	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
@@ -751,7 +781,7 @@ void Engine::createRenderPass() {
 void Engine::createDescriptorSetLayout() {
 	VkDescriptorSetLayoutBinding uboLayoutBinding{};
 	uboLayoutBinding.binding = 0; // binding in shader
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	uboLayoutBinding.descriptorCount = 1;
 	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
@@ -1032,8 +1062,20 @@ void Engine::createIndexBuffer() {
 	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
+void Engine::getUboAlignment() {
+	VkPhysicalDeviceProperties props{};
+	vkGetPhysicalDeviceProperties(physicalDevice, &props);
+
+	size_t minUboAlignment = props.limits.minUniformBufferOffsetAlignment;
+	size_t alignment = sizeof(glm::mat4);
+	uboAlignment = (alignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
+}
+
 void Engine::createUniformBuffers() {
-	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+	mvpMatrices = {};
+	mvpMatrices.matrix = (glm::mat4 *)_aligned_malloc(100 * uboAlignment, uboAlignment);
+
+	VkDeviceSize bufferSize = 100 * uboAlignment;
 
 	uniformBuffers.resize(swapChainImages.size());
 	uniformBufferMemory.resize(swapChainImages.size());
@@ -1112,7 +1154,7 @@ void Engine::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize siz
 
 void Engine::createDescriptorPool() {
 	VkDescriptorPoolSize poolSize{};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
 
 	VkDescriptorPoolCreateInfo poolInfo{};
@@ -1143,14 +1185,14 @@ void Engine::createDescriptorSets() {
 		VkDescriptorBufferInfo bufferInfo{};
 		bufferInfo.buffer = uniformBuffers[i];
 		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
+		bufferInfo.range = VK_WHOLE_SIZE;
 
 		VkWriteDescriptorSet descriptorWrite{};
 		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite.dstSet = descriptorSets[i];
 		descriptorWrite.dstBinding = 0;
 		descriptorWrite.dstArrayElement = 0;
-		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		descriptorWrite.descriptorCount = 1;
 		descriptorWrite.pBufferInfo = &bufferInfo;
 
@@ -1203,10 +1245,13 @@ void Engine::createCommandBuffers() {
 
 		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-		// Uniform buffer object
-		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
+		for (size_t j = 0; j < rects.size(); j++) {
+			uint32_t offset = j * static_cast<uint32_t>(uboAlignment);
 
-		for (size_t j = 0; j < vertices.size()/4; j++) {
+			// Uniform buffer object
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 1, &offset);
+
+			// Draw one rect
 			vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(j*6), 0, 0);
 		}
 
@@ -1281,9 +1326,9 @@ uint32_t Engine::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags prope
 	throw std::runtime_error("Failed to find suitable memory type");
 }
 
-void Engine::updateUniformBuffer(uint32_t currentImage, const UniformBufferObject *ubo) {	
+void Engine::updateUniformBuffer(uint32_t currentImage) {
 	void *data;
-	vkMapMemory(device, uniformBufferMemory[currentImage], 0, sizeof(*ubo), 0, &data);
-	memcpy(data, ubo, sizeof(*ubo));
+	vkMapMemory(device, uniformBufferMemory[currentImage], 0, 100 * uboAlignment, 0, &data);
+	memcpy(data, mvpMatrices.matrix, 100 * uboAlignment);
 	vkUnmapMemory(device, uniformBufferMemory[currentImage]);
 }

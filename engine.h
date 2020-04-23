@@ -87,8 +87,8 @@ struct Vertex {
 	}
 };
 
-struct UniformBufferObject {
-	alignas(16) glm::mat4 mvpMatrix;
+struct mvpMatricesObject {
+	glm::mat4 *matrix = nullptr;
 };
 
 class Engine {
@@ -153,11 +153,16 @@ private:
 
 	glm::mat4 projViewMatrix;
 
+	mvpMatricesObject mvpMatrices;
+	size_t uboAlignment;
+
 	std::vector<VkBuffer> uniformBuffers;
 	std::vector<VkDeviceMemory> uniformBufferMemory;
 
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
+
+	std::vector<bool> uniformNeedsUpdate;
 
 	void initWindow();
 	void initVulkan();
@@ -195,6 +200,7 @@ private:
 
 	void createVertexBuffer();
 	void createIndexBuffer();
+	void getUboAlignment();
 	void createUniformBuffers();
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
@@ -207,11 +213,12 @@ private:
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	void drawFrame();
-	void updateUniformBuffer(uint32_t currentImage, const UniformBufferObject * ubo);
+	void updateUniformBuffer(uint32_t currentImage);
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
 	
 	void cleanupSwapChain();
 
 	static void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods);
+	void updateMatrix(size_t matrixIndex);
 };

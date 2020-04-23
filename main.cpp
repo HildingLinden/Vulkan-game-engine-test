@@ -11,9 +11,9 @@ int main() {
 	app.rects.push_back(rect1);
 	app.addVerticesAndIndices(rect1);
 
-	//ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.0000001f, 10000000.0f);
-	//ubo.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.5f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	//ubo.proj[1][1] *= -1; // Flip Y since OpenGL is flipped, also change winding order to counter_clockwise
+	Rect rect2(300, 300, 10, 10);
+	app.rects.push_back(rect2);
+	app.addVerticesAndIndices(rect2);
 
 	try {
 		app.run();
