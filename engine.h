@@ -93,13 +93,20 @@ struct mvpMatricesObject {
 
 class Engine {
 public:
-	Engine(int width, int height);
-	void addVerticesAndIndices(Rect &rect);
-	void run();
+	Engine(int width, int height, std::string title);
+	void addRect(Rect &rect);
+	void init();
+	void drawFrame();
+	void cleanup();
 
-	std::vector<Rect> rects;
+	bool shouldClose();
+	void changeTitle(std::string fpsString);
+	void pollEvents();
+	void updateMatrix(Rect &rect);
 
 private:
+	std::string title;
+
 	uint32_t width;
 	uint32_t height;
 
@@ -155,6 +162,7 @@ private:
 
 	mvpMatricesObject mvpMatrices;
 	size_t uboAlignment;
+	size_t rectCount = 0;
 
 	std::vector<VkBuffer> uniformBuffers;
 	std::vector<VkDeviceMemory> uniformBufferMemory;
@@ -166,8 +174,6 @@ private:
 
 	void initWindow();
 	void initVulkan();
-	void mainLoop();
-	void cleanup();
 
 	void createInstance();
 	bool checkValidationLayerSupport();
@@ -212,7 +218,6 @@ private:
 	void createSyncObjects();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-	void drawFrame();
 	void updateUniformBuffer(uint32_t currentImage);
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
@@ -220,5 +225,4 @@ private:
 	void cleanupSwapChain();
 
 	static void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods);
-	void updateMatrix(size_t matrixIndex);
 };

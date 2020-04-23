@@ -24,22 +24,14 @@ const bool enableValidationLayers = true;
 #endif
 
 
-Engine::Engine(int width, int height) : width(width), height(height) {}
+Engine::Engine(int width, int height, std::string) : width(width), height(height), title(title) {}
 
-void Engine::run() {
+void Engine::init() {
 	initWindow();
 	initVulkan();
-	mainLoop();
-	cleanup();
 }
 
-void Engine::addVerticesAndIndices(Rect &rect) {
-	/*float x = (rect.x / (float)this->width) * 2 - 1;
-	float y = (rect.y / (float)this->height) * 2 - 1;
-	float width = (rect.width / (float)this->width) * 2;
-	float height = (rect.height / (float)this->height) * 2;*/
-
-	//vertices.clear();
+void Engine::addRect(Rect &rect) {
 	vertices.push_back({ {rect.x, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y + rect.height}, { 1.0f, 0.0f, 0.0f } });
@@ -47,13 +39,53 @@ void Engine::addVerticesAndIndices(Rect &rect) {
 
 
 	uint32_t vertexCount = (uint32_t)vertices.size()-4;
-	//indices.clear();
 	indices.push_back(vertexCount); 
 	indices.push_back(vertexCount + 1);
 	indices.push_back(vertexCount + 2);
 	indices.push_back(vertexCount + 2);
 	indices.push_back(vertexCount + 3);
 	indices.push_back(vertexCount);
+
+	rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatrices.matrix + (rectCount * uboAlignment));
+	*rect.mvpMatrix = projViewMatrix;
+	
+	if (rectCount == 0) {
+		rectCount++;
+
+		// Initialize all uniformBufferMemory locations with the mvpMatrices buffer
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
+			updateUniformBuffer(i);
+			uniformNeedsUpdate.push_back(false);
+		}
+
+		// Vertex buffer, index buffer
+		createVertexBuffer();
+		createIndexBuffer();
+
+		// Create and record command buffer
+		createCommandBuffers();
+	}
+	else {
+		rectCount++;
+
+		// All swapChainImages should now update the uniform buffer object when drawing
+		std::fill(uniformNeedsUpdate.begin(), uniformNeedsUpdate.end(), true);
+
+		vkDestroyBuffer(device, indexBuffer, nullptr);
+		vkFreeMemory(device, indexBufferMemory, nullptr);
+
+		vkDestroyBuffer(device, vertexBuffer, nullptr);
+		vkFreeMemory(device, vertexBufferMemory, nullptr);
+
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+
+		// Vertex buffer, index buffer
+		createVertexBuffer();
+		createIndexBuffer();
+
+		// Create and record command buffer
+		createCommandBuffers();
+	}
 }
 
 void Engine::initWindow() {
@@ -62,7 +94,7 @@ void Engine::initWindow() {
 	// Don't create a OpenGL context
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	window = glfwCreateWindow(width, height, "Vulkan Test Application", nullptr, nullptr);
+	window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
 	glfwSetWindowUserPointer(window, this);
 	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
@@ -77,20 +109,14 @@ void Engine::mouseButtonCallback(GLFWwindow *window, int button, int action, int
 	Engine *app = reinterpret_cast<Engine*>(glfwGetWindowUserPointer(window));
 	
 	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-		app->updateMatrix(0);
 	}
 	else if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-		app->updateMatrix(1);
 	}
 }
 
-void Engine::updateMatrix(size_t matrixIndex) {
-	// Update model matrix
-	rects[matrixIndex].modelMatrix = glm::translate(rects[matrixIndex].modelMatrix, glm::vec3(10.0f, 0.0f, 0.0f));
-
-	// Compute and update mvpMatrix
-	glm::mat4 *matrix = (glm::mat4*)((uint64_t)mvpMatrices.matrix + (matrixIndex * uboAlignment));
-	*matrix = projViewMatrix * rects[matrixIndex].modelMatrix;
+void Engine::updateMatrix(Rect &rect) {
+	// Update mvpMatrix in the mvpMatrix buffer
+	*rect.mvpMatrix = projViewMatrix * rect.modelMatrix;
 
 	// All swapChainImages should now update the uniform buffer object when drawing
 	std::fill(uniformNeedsUpdate.begin(), uniformNeedsUpdate.end(), true);
@@ -117,77 +143,14 @@ void Engine::initVulkan() {
 	createFramebuffers();
 	createCommandPool();
 
-	// Vertex buffer, index buffer and uniform setup
-	createVertexBuffer();
-	createIndexBuffer();
+	// Uniform buffer object setup
 	getUboAlignment();
 	createUniformBuffers();
 	createDescriptorPool();
 	createDescriptorSets();
 
-	// Create and record command buffer
-	createCommandBuffers();
-
 	// Create semaphores and fences
 	createSyncObjects();
-}
-
-void Engine::mainLoop() {
-	uint32_t frameCount = 0;
-	float time = 0.0f;
-	size_t fpsIndex = 0;
-
-	std::array<float, 10> fpsBuffer{};
-	fpsBuffer.fill(144.0f);
-
-	std::string title("Vulkan Test Application - ");
-
-	// Compute all mvp matrices and put them in the mvpMatrices buffer
-	for (size_t i = 0; i < rects.size(); i++) {
-		glm::mat4 *matrix = (glm::mat4*)((uint64_t)mvpMatrices.matrix + (i * uboAlignment));
-		*matrix = projViewMatrix * rects[i].modelMatrix;
-	}
-	// Initialize all uniformBufferMemory locations with the mvpMatrices buffer
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		updateUniformBuffer(i);
-		uniformNeedsUpdate.push_back(false);
-	}
-	   
-	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
-		frameCount++;
-
-		std::chrono::time_point startTime = std::chrono::high_resolution_clock::now();
-		drawFrame();
-		std::chrono::time_point currentTime = std::chrono::high_resolution_clock::now();
-		time += std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-		if (time > 0.5f) {
-			fpsBuffer[fpsIndex++ % 10] = frameCount / time;
-
-			float avgFps = 0.0f;
-			for (float fps : fpsBuffer) {
-				avgFps += fps;
-			}
-			avgFps /= 10;
-
-			std::string fpsString = title + std::to_string(avgFps);
-
-			time = 0.0f;
-			frameCount = 0;
-			glfwSetWindowTitle(window, fpsString.c_str());
-
-			/*for (size_t j = 0; j < 4; j++) {
-				for (size_t k = 0; k < 4; k++) {
-					std::cout << mvpMatrices.matrix[0][j][k] << " ";
-				}
-				std::cout << "\n";
-			}
-			std::cout << std::endl;*/
-		}
-	}
-
-	vkDeviceWaitIdle(device);
 }
 
 void Engine::drawFrame() {
@@ -258,6 +221,20 @@ void Engine::drawFrame() {
 	}
 
 	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+	vkDeviceWaitIdle(device);
+}
+
+bool Engine::shouldClose() {
+	return glfwWindowShouldClose(window);
+}
+
+void Engine::changeTitle(std::string fpsString) {
+	glfwSetWindowTitle(window, fpsString.c_str());
+}
+
+void Engine::pollEvents() {
+	glfwPollEvents();
 }
 
 void Engine::cleanup() {
@@ -1025,7 +1002,7 @@ void Engine::createVertexBuffer() {
 	vkUnmapMemory(device, stagingBufferMemory);
 
 	createBuffer(
-		bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT| VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory
 	);
 
@@ -1245,7 +1222,7 @@ void Engine::createCommandBuffers() {
 
 		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-		for (size_t j = 0; j < rects.size(); j++) {
+		for (size_t j = 0; j < rectCount; j++) {
 			uint32_t offset = j * static_cast<uint32_t>(uboAlignment);
 
 			// Uniform buffer object
