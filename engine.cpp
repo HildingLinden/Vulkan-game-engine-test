@@ -1,5 +1,4 @@
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #include <iostream>
 #include <stdexcept>
@@ -8,7 +7,6 @@
 #include <fstream>
 #include <string>
 
-#include "shapes.h"
 #include "engine.h"
 
 Engine::Engine(int width, int height, std::string, ShaderBufferTypes shaderBufferType) : width(width), height(height), title(title), shaderBufferType(shaderBufferType) {}
@@ -24,6 +22,7 @@ void Engine::addRect(Rect &rect) {
 		std::cerr << "Maximum rectangles already in use" << std::endl;
 		return;
 	}
+
 	vertices.push_back({ {rect.x, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y + rect.height}, { 1.0f, 0.0f, 0.0f } });
@@ -50,27 +49,58 @@ void Engine::addRect(Rect &rect) {
 
 	*rect.mvpMatrix = projViewMatrix;
 	
-	if (rectCount == 0) {
-		rectCount++;
+	bool init = rectCount == 0;
 
-		// Initialize all uniformBufferMemory locations with the mvpMatrices buffer
-		shaderBufferNeedsUpdate.resize(swapChainImages.size());
-		std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
+	rectCount++;
 
+	recreateVertexIndexCommandBuffers(init);
+}
 
-		// Vertex buffer, index buffer
-		createVertexBuffer();
-		createIndexBuffer();
-
-		// Allocate and record command buffer
-		createCommandBuffer();
+void Engine::addRects(std::vector<Rect> &rects) {
+	size_t newRectCount = rectCount + rects.size();
+	if (shaderBufferType == ShaderBufferTypes::UBO && newRectCount > PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
+		shaderBufferType == ShaderBufferTypes::SSBO && newRectCount > PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
+		std::cerr << "Number of rectangles would exceed pre allocated size" << std::endl;
+		return;
 	}
-	else {
+
+	bool init = rectCount == 0;
+
+	for (size_t i = 0; i < rects.size(); i++) {
+		vertices.push_back({ {rects[i].x, rects[i].y}, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {rects[i].x + rects[i].width, rects[i].y}, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {rects[i].x + rects[i].width, rects[i].y + rects[i].height}, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {rects[i].x, rects[i].y + rects[i].height}, { 1.0f, 0.0f, 0.0f } });
+
+
+		uint32_t vertexCount = (uint32_t)vertices.size() - 4;
+		indices.push_back(vertexCount);
+		indices.push_back(vertexCount + 1);
+		indices.push_back(vertexCount + 2);
+		indices.push_back(vertexCount + 2);
+		indices.push_back(vertexCount + 3);
+		indices.push_back(vertexCount);
+
+		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+			rects[i].mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (rectCount * sboAlignment));
+		}
+		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+			rects[i].mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (rectCount * uboAlignment));
+		}
+		else {
+			throw std::runtime_error("Unknown shaderBufferType used");
+		}
+
+		*rects[i].mvpMatrix = projViewMatrix;
+
 		rectCount++;
+	}
 
-		// All swapChainImages should now update the uniform buffer object when drawing
-		std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
+	recreateVertexIndexCommandBuffers(init);
+}
 
+void Engine::recreateVertexIndexCommandBuffers(bool init) {
+	if (!init) {
 		// Wait for VkBuffers and command pool to stop pending
 		vkDeviceWaitIdle(device);
 
@@ -78,16 +108,18 @@ void Engine::addRect(Rect &rect) {
 		vkFreeMemory(device, indexBufferMemory, nullptr);
 
 		vkDestroyBuffer(device, vertexBuffer, nullptr);
-		vkFreeMemory(device, vertexBufferMemory, nullptr);
-
-		// Reset command pool much faster than free and reallocate command buffer and little faster than reset command buffer
-		vkResetCommandPool(device, commandPool, 0); //VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT??
-
-		createVertexBuffer();
-		createIndexBuffer();
-
-		recordCommandBuffer();
+		vkFreeMemory(device, vertexBufferMemory, nullptr);		
 	}
+
+	createVertexBuffer();
+	createIndexBuffer();
+
+	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
+
+	// Reset command pool much faster than free and reallocate command buffer and little faster than reset command buffer
+	vkResetCommandPool(device, commandPool, 0); //VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT??
+
+	recordCommandBuffer();
 }
 
 void Engine::initWindow() {
@@ -128,6 +160,9 @@ void Engine::initVulkan() {
 
 	createLogicalDevice();
 	createSwapChain();
+	
+	shaderBufferNeedsUpdate = std::vector<bool>(swapChainImages.size(), false);
+
 	createImageViews();
 	createRenderPass();
 	createDescriptorSetLayout();
@@ -150,6 +185,8 @@ void Engine::initVulkan() {
 
 	createDescriptorPool();
 	createDescriptorSets();
+
+	createCommandBuffer();
 
 	// Create semaphores and fences
 	createSyncObjects();
@@ -263,7 +300,7 @@ void Engine::cleanup() {
 	cleanupSwapChain();
 
 	if (shaderBufferType == ShaderBufferTypes::SSBO) {
-		_aligned_free(mvpMatricesSbo.matrix);
+		_aligned_free(mvpMatricesSbo.matrix);	
 	}
 	else if (shaderBufferType == ShaderBufferTypes::UBO) {
 		_aligned_free(mvpMatricesUbo.matrix);
@@ -272,7 +309,25 @@ void Engine::cleanup() {
 		throw std::runtime_error("Unknown shaderBufferType used");
 	}
 
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
+		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+			vkDestroyBuffer(device, storageBuffers[i], nullptr);
+			vkFreeMemory(device, storageBufferMemory[i], nullptr);
+		}
+		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+			vkFreeMemory(device, uniformBufferMemory[i], nullptr);
+		}
+		else {
+			throw std::runtime_error("Unknown shaderBufferType used");
+		}
+	}
+
+	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+
+	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+	vkDestroyCommandPool(device, commandPool, nullptr);
 
 	vkDestroyBuffer(device, indexBuffer, nullptr);
 	vkFreeMemory(device, indexBufferMemory, nullptr);
@@ -285,8 +340,6 @@ void Engine::cleanup() {
 		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 		vkDestroyFence(device, inFlightFences[i], nullptr);
 	}
-
-	vkDestroyCommandPool(device, commandPool, nullptr);
 
 	vkDestroyDevice(device, nullptr);
 
@@ -302,27 +355,9 @@ void Engine::cleanup() {
 }
 
 void Engine::cleanupSwapChain() {
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		if (shaderBufferType == ShaderBufferTypes::SSBO) {
-			vkDestroyBuffer(device, storageBuffers[i], nullptr);
-			vkFreeMemory(device, storageBufferMemory[i], nullptr);
-		}
-		else if (shaderBufferType == ShaderBufferTypes::UBO) {
-			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-			vkFreeMemory(device, uniformBufferMemory[i], nullptr);
-		}
-		else {
-			throw std::runtime_error("Unknown shaderBufferType used");
-		}		
-	}
-
-	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-
 	for (VkFramebuffer framebuffer : swapChainFramebuffers) {
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
-
-	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -1353,34 +1388,36 @@ void Engine::recordCommandBuffer() {
 
 		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-		VkBuffer vertexBuffers[] = { vertexBuffer };
-		VkDeviceSize offsets[] = { 0 };
-		vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+		if (rectCount > 0) {
+			VkBuffer vertexBuffers[] = { vertexBuffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-		for (size_t j = 0; j < rectCount; j++) {
-			std::vector<uint32_t> offsets;
+			for (size_t j = 0; j < rectCount; j++) {
+				std::vector<uint32_t> offsets;
 
-			if (shaderBufferType == ShaderBufferTypes::SSBO) {
-				uint32_t sboOffset = static_cast<uint32_t>(j * sboAlignment);
+				if (shaderBufferType == ShaderBufferTypes::SSBO) {
+					uint32_t sboOffset = static_cast<uint32_t>(j * sboAlignment);
 
-				offsets.push_back(sboOffset);
+					offsets.push_back(sboOffset);
+				}
+				else if (shaderBufferType == ShaderBufferTypes::UBO) {
+					uint32_t uboOffset = static_cast<uint32_t>(j * uboAlignment);
+
+					offsets.push_back(uboOffset);
+				}
+				else {
+					throw std::runtime_error("Unknown shaderBufferType used");
+				}
+
+				// Uniform buffer object
+				vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], static_cast<uint32_t>(offsets.size()), offsets.data());
+
+				// Draw one rect
+				vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(j * 6), 0, 0);
 			}
-			else if (shaderBufferType == ShaderBufferTypes::UBO) {
-				uint32_t uboOffset = static_cast<uint32_t>(j * uboAlignment);
-
-				offsets.push_back(uboOffset);
-			}
-			else {
-				throw std::runtime_error("Unknown shaderBufferType used");
-			}
-
-			// Uniform buffer object
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], static_cast<uint32_t>(offsets.size()), offsets.data());
-
-			// Draw one rect
-			vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(j * 6), 0, 0);
 		}
 
 		vkCmdEndRenderPass(commandBuffers[i]);
@@ -1435,11 +1472,18 @@ void Engine::recreateSwapChain() {
 	createRenderPass();
 	createGraphicsPipeline(); // Could use dynamic state instead
 	createFramebuffers();
-	createUniformBuffer();
-	createStorageBuffer();
-	createDescriptorPool();
-	createDescriptorSets();
-	createCommandBuffer();
+
+	// If swapChainImage count changes
+	// Add aligned_free, free/destroy uniform/storage, destroy descriptorPool and destroy descriptorSets to cleanSwapChain
+	//createUniformBuffer();
+	//createStorageBuffer();
+	//createDescriptorPool();
+	//createDescriptorSets();
+
+	updateProjectionMatrix();
+	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
+	
+	vkResetCommandPool(device, commandPool, 0);
 	recordCommandBuffer();
 }
 
@@ -1472,4 +1516,24 @@ void Engine::updateStorageBuffer(uint32_t currentImage) {
 
 void Engine::setMouseCallback(GLFWmousebuttonfun fun) {
 	glfwSetMouseButtonCallback(window, fun);
+}
+
+void Engine::updateProjectionMatrix() {
+	projViewMatrix = glm::ortho(0.0f, (float)swapChainExtent.width, 0.0f, (float)swapChainExtent.height);
+
+	for (size_t i = 0; i < rectCount; i++) {
+		glm::mat4 *mat;
+
+		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+			mat = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (i * sboAlignment));
+		}
+		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+			mat = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (i * sboAlignment));
+		}
+		else {
+			throw std::runtime_error("Unknown shaderBufferType used");
+		}
+
+		*mat = projViewMatrix;
+	}
 }

@@ -4,9 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
-#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
-#include <glm/mat4x4.hpp>
 
 #include <vector>
 #include <cstring>
@@ -14,7 +12,6 @@
 #include <cstdint>
 #include <chrono>
 #include <array>
-#include <functional>
 
 #include "shapes.h"
 
@@ -98,6 +95,7 @@ class Engine {
 public:
 	Engine(int width, int height, std::string title, ShaderBufferTypes shaderBufferType);
 	void addRect(Rect &rect);
+	void addRects(std::vector<Rect> &rects);
 	void init();
 	void drawFrame();
 	void cleanup();
@@ -250,6 +248,10 @@ private:
 	void updateStorageBuffer(uint32_t currentImage);
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
+
+	void recreateVertexIndexCommandBuffers(bool init);
+
+	void updateProjectionMatrix();
 	
 	void cleanupSwapChain();
 };

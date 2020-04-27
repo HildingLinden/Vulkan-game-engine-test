@@ -5,61 +5,73 @@
 #include <string>
 #include <cstdlib>
 
+class FPSCounter {
+private:
+	std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+	std::chrono::time_point<std::chrono::high_resolution_clock> endTime;
+	float fpsUpdateInterval;
+	float fpsUpdateTimer = 0.0f;
+	int frameCount = 0;
+	std::string title;
+	Engine app;
+public:
+	FPSCounter(std::string title, Engine &app, float interval) : title(title), app(app), fpsUpdateInterval(interval) {}
+
+	void start() {
+		startTime = std::chrono::high_resolution_clock::now();
+	}
+
+	float end() {
+		endTime = std::chrono::high_resolution_clock::now();
+
+		std::chrono::duration<float> elapsedTime = endTime - startTime;
+
+		fpsUpdateTimer += elapsedTime.count();
+		frameCount++;
+
+		if (fpsUpdateTimer > fpsUpdateInterval) {
+			int fps = round(frameCount / fpsUpdateTimer);
+			app.changeTitle(title + std::to_string(fps) + " fps");
+			fpsUpdateTimer = 0.0f;
+			frameCount = 0;
+		}
+
+		return elapsedTime.count();
+	}
+};
+
 int main() {
 	try {
+		// Initialization
 		std::string title("Vulkan Test Application - ");
 
 		Engine app(1280, 720, title, ShaderBufferTypes::SSBO);
+		app.init();		
 
-		app.init();
+		FPSCounter fpsCounter(title, app, 1.0f);
 
-		uint32_t frameCount = 0;
-		float time = 0.0f;
-		float elapsedTime = 0.0f;
-		size_t fpsIndex = 0;
-
-		std::array<float, 10> fpsBuffer{};
-		fpsBuffer.fill(144.0f);
-
-		Rect r(10, 10, 100, 100);
-		app.addRect(r);
-
+		// Main game loop
 		while (!app.shouldClose()) {
-			std::chrono::time_point startTime = std::chrono::high_resolution_clock::now();
+			fpsCounter.start();
 
 			// User input
-			app.pollEvents();
+			app.pollEvents();			
 			if (app.checkMouseClick()) {
-				Rect tmp(rand() % 1280, rand() % 720, 10, 10);
-				app.addRect(tmp);
-			}
+				std::vector<Rect> rects;
+				for (size_t i = 0; i < 10; i++) {
+					Rect r(rand() % 1280, rand() % 720, 10, 10);
+					rects.push_back(r);
+				}
+				app.addRects(rects);
+			}			
 
 			// Render
 			app.drawFrame();
-			frameCount++;
 
-			std::chrono::time_point currentTime = std::chrono::high_resolution_clock::now();
-			elapsedTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-			time += elapsedTime;
-
-			if (time > 0.5f) {
-				fpsBuffer[fpsIndex++ % 10] = frameCount / time;
-
-				float avgFps = 0.0f;
-				for (float fps : fpsBuffer) {
-					avgFps += fps;
-				}
-				avgFps /= 10;
-
-				std::string fpsString = title + std::to_string((int)round(avgFps)) + " fps - " + std::to_string(app.rectCount) + " rectangles";
-
-				time = 0.0f;
-				frameCount = 0;
-
-				app.changeTitle(fpsString);
-			}
+			fpsCounter.end();
 		}
 
+		// Clean up
 		app.cleanup();
 	}
 	catch (const std::exception& e) {
