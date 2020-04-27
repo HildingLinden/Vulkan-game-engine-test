@@ -11,20 +11,7 @@
 #include "shapes.h"
 #include "engine.h"
 
-const int MAX_FRAMES_IN_FLIGHT = 2;
-
-const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
-
-const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
-
-
-Engine::Engine(int width, int height, std::string) : width(width), height(height), title(title) {}
+Engine::Engine(int width, int height, std::string, ShaderBufferTypes shaderBufferType) : width(width), height(height), title(title), shaderBufferType(shaderBufferType) {}
 
 void Engine::init() {
 	initWindow();
@@ -32,6 +19,11 @@ void Engine::init() {
 }
 
 void Engine::addRect(Rect &rect) {
+	if (shaderBufferType == ShaderBufferTypes::UBO && rectCount >= PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
+		shaderBufferType == ShaderBufferTypes::SSBO && rectCount >= PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
+		std::cerr << "Maximum rectangles already in use" << std::endl;
+		return;
+	}
 	vertices.push_back({ {rect.x, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y + rect.height}, { 1.0f, 0.0f, 0.0f } });
@@ -46,30 +38,41 @@ void Engine::addRect(Rect &rect) {
 	indices.push_back(vertexCount + 3);
 	indices.push_back(vertexCount);
 
-	rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatrices.matrix + (rectCount * uboAlignment));
+	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (rectCount * sboAlignment));
+	}
+	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (rectCount * uboAlignment));
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}
+
 	*rect.mvpMatrix = projViewMatrix;
 	
 	if (rectCount == 0) {
 		rectCount++;
 
 		// Initialize all uniformBufferMemory locations with the mvpMatrices buffer
-		for (size_t i = 0; i < swapChainImages.size(); i++) {
-			updateUniformBuffer(i);
-			uniformNeedsUpdate.push_back(false);
-		}
+		shaderBufferNeedsUpdate.resize(swapChainImages.size());
+		std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
+
 
 		// Vertex buffer, index buffer
 		createVertexBuffer();
 		createIndexBuffer();
 
-		// Create and record command buffer
-		createCommandBuffers();
+		// Allocate and record command buffer
+		createCommandBuffer();
 	}
 	else {
 		rectCount++;
 
 		// All swapChainImages should now update the uniform buffer object when drawing
-		std::fill(uniformNeedsUpdate.begin(), uniformNeedsUpdate.end(), true);
+		std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
+
+		// Wait for VkBuffers and command pool to stop pending
+		vkDeviceWaitIdle(device);
 
 		vkDestroyBuffer(device, indexBuffer, nullptr);
 		vkFreeMemory(device, indexBufferMemory, nullptr);
@@ -77,14 +80,13 @@ void Engine::addRect(Rect &rect) {
 		vkDestroyBuffer(device, vertexBuffer, nullptr);
 		vkFreeMemory(device, vertexBufferMemory, nullptr);
 
-		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+		// Reset command pool much faster than free and reallocate command buffer and little faster than reset command buffer
+		vkResetCommandPool(device, commandPool, 0); //VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT??
 
-		// Vertex buffer, index buffer
 		createVertexBuffer();
 		createIndexBuffer();
 
-		// Create and record command buffer
-		createCommandBuffers();
+		recordCommandBuffer();
 	}
 }
 
@@ -97,7 +99,6 @@ void Engine::initWindow() {
 	window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
 	glfwSetWindowUserPointer(window, this);
 	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-	glfwSetMouseButtonCallback(window, mouseButtonCallback);
 }
 
 void Engine::framebufferResizeCallback(GLFWwindow *window, int width, int height) {
@@ -105,21 +106,12 @@ void Engine::framebufferResizeCallback(GLFWwindow *window, int width, int height
 	app->frameBufferResized = true;
 }
 
-void Engine::mouseButtonCallback(GLFWwindow *window, int button, int action, int mods) {
-	Engine *app = reinterpret_cast<Engine*>(glfwGetWindowUserPointer(window));
-	
-	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-	}
-	else if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-	}
-}
-
 void Engine::updateMatrix(Rect &rect) {
 	// Update mvpMatrix in the mvpMatrix buffer
 	*rect.mvpMatrix = projViewMatrix * rect.modelMatrix;
 
 	// All swapChainImages should now update the uniform buffer object when drawing
-	std::fill(uniformNeedsUpdate.begin(), uniformNeedsUpdate.end(), true);
+	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
 }
 
 void Engine::initVulkan() {
@@ -143,9 +135,19 @@ void Engine::initVulkan() {
 	createFramebuffers();
 	createCommandPool();
 
-	// Uniform buffer object setup
-	getUboAlignment();
-	createUniformBuffers();
+	// Shader buffer setup
+	getAlignments();
+
+	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		createStorageBuffer();
+	}
+	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		createUniformBuffer();
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}
+
 	createDescriptorPool();
 	createDescriptorSets();
 
@@ -172,9 +174,18 @@ void Engine::drawFrame() {
 	}
 	imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
-	if (uniformNeedsUpdate[imageIndex]) {
-		updateUniformBuffer(imageIndex);
-		uniformNeedsUpdate[imageIndex] = false;
+	// Update the UBO or SSBO for this swapChainImage if the content in the buffer has changed
+	if (shaderBufferNeedsUpdate[imageIndex]) {
+		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+			updateStorageBuffer(imageIndex);
+		} 
+		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+			updateUniformBuffer(imageIndex);
+		}
+		else {
+			throw std::runtime_error("Unknown shaderBufferType used");
+		}
+		shaderBufferNeedsUpdate[imageIndex] = false;
 	}
 
 	VkSubmitInfo submitInfo{};
@@ -217,12 +228,10 @@ void Engine::drawFrame() {
 		recreateSwapChain();
 	}
 	else if (result != VK_SUCCESS) {
-		throw std::runtime_error("Failed to represent swap chain image");
+		throw std::runtime_error("Failed to present swap chain image");
 	}
 
 	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-
-	vkDeviceWaitIdle(device);
 }
 
 bool Engine::shouldClose() {
@@ -237,10 +246,31 @@ void Engine::pollEvents() {
 	glfwPollEvents();
 }
 
+bool Engine::checkMouseClick() {
+	int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+	return (state == GLFW_PRESS);
+		/*for (size_t i = 0; i < 100; i++) {
+			int x = round(rand() % 1920);
+			int y = round(rand() % 1080);
+			Rect r(x, y, 20, 20);
+			addRect(r);
+		}*/
+}
+
 void Engine::cleanup() {
+	vkDeviceWaitIdle(device);
+
 	cleanupSwapChain();
 
-	_aligned_free(mvpMatrices.matrix);
+	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		_aligned_free(mvpMatricesSbo.matrix);
+	}
+	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		_aligned_free(mvpMatricesUbo.matrix);
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}
 
 	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
@@ -273,8 +303,17 @@ void Engine::cleanup() {
 
 void Engine::cleanupSwapChain() {
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-		vkFreeMemory(device, uniformBufferMemory[i], nullptr);
+		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+			vkDestroyBuffer(device, storageBuffers[i], nullptr);
+			vkFreeMemory(device, storageBufferMemory[i], nullptr);
+		}
+		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+			vkFreeMemory(device, uniformBufferMemory[i], nullptr);
+		}
+		else {
+			throw std::runtime_error("Unknown shaderBufferType used");
+		}		
 	}
 
 	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -756,16 +795,33 @@ void Engine::createRenderPass() {
 }
 
 void Engine::createDescriptorSetLayout() {
-	VkDescriptorSetLayoutBinding uboLayoutBinding{};
-	uboLayoutBinding.binding = 0; // binding in shader
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		VkDescriptorSetLayoutBinding sboLayoutBinding{};
+		sboLayoutBinding.binding = 1;
+		sboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+		sboLayoutBinding.descriptorCount = 1;
+		sboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+		bindings.push_back(sboLayoutBinding);
+	}
+	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		VkDescriptorSetLayoutBinding uboLayoutBinding{};
+		uboLayoutBinding.binding = 0; // binding in shader
+		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		uboLayoutBinding.descriptorCount = 1;
+		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		bindings.push_back(uboLayoutBinding);
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &uboLayoutBinding;
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
 
 	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to create descriptor set layout");
@@ -1039,20 +1095,36 @@ void Engine::createIndexBuffer() {
 	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void Engine::getUboAlignment() {
+void Engine::getAlignments() {
 	VkPhysicalDeviceProperties props{};
 	vkGetPhysicalDeviceProperties(physicalDevice, &props);
 
+	/*std::cout << "Max dynamic ubos " << props.limits.maxDescriptorSetUniformBuffersDynamic << std::endl;
+	std::cout << "Max dynamic ubo size " << props.limits.maxUniformBufferRange << std::endl;
+	std::cout << "Min ubo alignment " << props.limits.minUniformBufferOffsetAlignment << "\n" << std::endl;
+
+	std::cout << "Max storage buffer " << props.limits.maxDescriptorSetStorageBuffersDynamic << std::endl;
+	std::cout << "Max storage buffer size " << props.limits.maxStorageBufferRange << std::endl;
+	std::cout << "Storage buffer alignment " << props.limits.minStorageBufferOffsetAlignment << "\n" << std::endl;
+
+	std::cout << "Max memory allocation count " << props.limits.maxMemoryAllocationCount << std::endl;
+	std::cout << "Max pushconstant size " << props.limits.maxPushConstantsSize << std::endl;*/
+
 	size_t minUboAlignment = props.limits.minUniformBufferOffsetAlignment;
+	size_t minSboAlignment = props.limits.minStorageBufferOffsetAlignment;
 	size_t alignment = sizeof(glm::mat4);
 	uboAlignment = (alignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
+	sboAlignment = (alignment + minSboAlignment - 1) & ~(minSboAlignment - 1);
+
+	size_t sboSize = props.limits.maxStorageBufferRange;
+	//std::cout << "Max amount of objects in storage buffer " << sboSize / sboAlignment << std::endl;
 }
 
-void Engine::createUniformBuffers() {
-	mvpMatrices = {};
-	mvpMatrices.matrix = (glm::mat4 *)_aligned_malloc(100 * uboAlignment, uboAlignment);
+void Engine::createUniformBuffer() {
+	mvpMatricesUbo = {};
+	mvpMatricesUbo.matrix = (glm::mat4 *)_aligned_malloc(PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment, uboAlignment);
 
-	VkDeviceSize bufferSize = 100 * uboAlignment;
+	VkDeviceSize bufferSize = PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment;
 
 	uniformBuffers.resize(swapChainImages.size());
 	uniformBufferMemory.resize(swapChainImages.size());
@@ -1062,6 +1134,24 @@ void Engine::createUniformBuffers() {
 			bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			uniformBuffers[i], uniformBufferMemory[i]
+		);
+	}
+}
+
+void Engine::createStorageBuffer() {
+	mvpMatricesSbo = {};
+	mvpMatricesSbo.matrix = (glm::mat4 *)_aligned_malloc(PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment, sboAlignment);
+
+	VkDeviceSize bufferSize = PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment;
+
+	storageBuffers.resize(swapChainImages.size());
+	storageBufferMemory.resize(swapChainImages.size());
+
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
+		createBuffer(
+			bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			storageBuffers[i], storageBufferMemory[i]
 		);
 	}
 }
@@ -1130,14 +1220,30 @@ void Engine::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize siz
 }
 
 void Engine::createDescriptorPool() {
-	VkDescriptorPoolSize poolSize{};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+	std::vector<VkDescriptorPoolSize> poolSizes;
+
+	if (shaderBufferType == ShaderBufferTypes::UBO) {
+		VkDescriptorPoolSize poolSizeUbo{};
+		poolSizeUbo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		poolSizeUbo.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+		poolSizes.push_back(poolSizeUbo);
+	}
+	else if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		VkDescriptorPoolSize poolSizeSbo{};
+		poolSizeSbo.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+		poolSizeSbo.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+		poolSizes.push_back(poolSizeSbo);
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
 	poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
 	if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
@@ -1147,6 +1253,7 @@ void Engine::createDescriptorPool() {
 
 void Engine::createDescriptorSets() {
 	std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+
 	VkDescriptorSetAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocInfo.descriptorPool = descriptorPool;
@@ -1159,25 +1266,51 @@ void Engine::createDescriptorSets() {
 	}
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = uniformBuffers[i];
-		bufferInfo.offset = 0;
-		bufferInfo.range = VK_WHOLE_SIZE;
+		std::vector<VkWriteDescriptorSet> writes;
 
-		VkWriteDescriptorSet descriptorWrite{};
-		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite.dstSet = descriptorSets[i];
-		descriptorWrite.dstBinding = 0;
-		descriptorWrite.dstArrayElement = 0;
-		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		descriptorWrite.descriptorCount = 1;
-		descriptorWrite.pBufferInfo = &bufferInfo;
+		if (shaderBufferType == ShaderBufferTypes::UBO) {
+			VkDescriptorBufferInfo bufferInfoUbo{};
+			bufferInfoUbo.buffer = uniformBuffers[i];
+			bufferInfoUbo.offset = 0;
+			bufferInfoUbo.range = VK_WHOLE_SIZE;
 
-		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+			VkWriteDescriptorSet descriptorWriteUbo{};
+			descriptorWriteUbo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWriteUbo.dstSet = descriptorSets[i];
+			descriptorWriteUbo.dstBinding = 0;
+			descriptorWriteUbo.dstArrayElement = 0;
+			descriptorWriteUbo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+			descriptorWriteUbo.descriptorCount = 1;
+			descriptorWriteUbo.pBufferInfo = &bufferInfoUbo;
+			
+			writes.push_back(descriptorWriteUbo);
+		}
+		else if (shaderBufferType == ShaderBufferTypes::SSBO) {
+			VkDescriptorBufferInfo bufferInfoSbo{};
+			bufferInfoSbo.buffer = storageBuffers[i];
+			bufferInfoSbo.offset = 0;
+			bufferInfoSbo.range = VK_WHOLE_SIZE;
+
+			VkWriteDescriptorSet descriptorWriteSbo{};
+			descriptorWriteSbo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWriteSbo.dstSet = descriptorSets[i];
+			descriptorWriteSbo.dstBinding = 1;
+			descriptorWriteSbo.dstArrayElement = 0;
+			descriptorWriteSbo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+			descriptorWriteSbo.descriptorCount = 1;
+			descriptorWriteSbo.pBufferInfo = &bufferInfoSbo;
+
+			writes.push_back(descriptorWriteSbo);
+		}
+		else {
+			throw std::runtime_error("Unknown shaderBufferType used");
+		}	
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
 }
 
-void Engine::createCommandBuffers() {
+void Engine::createCommandBuffer() {
 	commandBuffers.resize(swapChainFramebuffers.size());
 
 	VkCommandBufferAllocateInfo allocInfo{};
@@ -1190,6 +1323,10 @@ void Engine::createCommandBuffers() {
 		throw std::runtime_error("Failed to allocate command buffers");
 	}
 
+	recordCommandBuffer();
+}
+
+void Engine::recordCommandBuffer() {
 	for (size_t i = 0; i < commandBuffers.size(); i++) {
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1223,13 +1360,27 @@ void Engine::createCommandBuffers() {
 		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 		for (size_t j = 0; j < rectCount; j++) {
-			uint32_t offset = j * static_cast<uint32_t>(uboAlignment);
+			std::vector<uint32_t> offsets;
+
+			if (shaderBufferType == ShaderBufferTypes::SSBO) {
+				uint32_t sboOffset = static_cast<uint32_t>(j * sboAlignment);
+
+				offsets.push_back(sboOffset);
+			}
+			else if (shaderBufferType == ShaderBufferTypes::UBO) {
+				uint32_t uboOffset = static_cast<uint32_t>(j * uboAlignment);
+
+				offsets.push_back(uboOffset);
+			}
+			else {
+				throw std::runtime_error("Unknown shaderBufferType used");
+			}
 
 			// Uniform buffer object
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 1, &offset);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], static_cast<uint32_t>(offsets.size()), offsets.data());
 
 			// Draw one rect
-			vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(j*6), 0, 0);
+			vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(j * 6), 0, 0);
 		}
 
 		vkCmdEndRenderPass(commandBuffers[i]);
@@ -1284,10 +1435,12 @@ void Engine::recreateSwapChain() {
 	createRenderPass();
 	createGraphicsPipeline(); // Could use dynamic state instead
 	createFramebuffers();
-	createUniformBuffers();
+	createUniformBuffer();
+	createStorageBuffer();
 	createDescriptorPool();
 	createDescriptorSets();
-	createCommandBuffers();
+	createCommandBuffer();
+	recordCommandBuffer();
 }
 
 uint32_t Engine::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -1305,7 +1458,18 @@ uint32_t Engine::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags prope
 
 void Engine::updateUniformBuffer(uint32_t currentImage) {
 	void *data;
-	vkMapMemory(device, uniformBufferMemory[currentImage], 0, 100 * uboAlignment, 0, &data);
-	memcpy(data, mvpMatrices.matrix, 100 * uboAlignment);
+	vkMapMemory(device, uniformBufferMemory[currentImage], 0, PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment, 0, &data);
+	memcpy(data, mvpMatricesUbo.matrix, PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment);
 	vkUnmapMemory(device, uniformBufferMemory[currentImage]);
+}
+
+void Engine::updateStorageBuffer(uint32_t currentImage) {
+	void *data;
+	vkMapMemory(device, storageBufferMemory[currentImage], 0, PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment, 0, &data);
+	memcpy(data, mvpMatricesSbo.matrix, PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment);
+	vkUnmapMemory(device, storageBufferMemory[currentImage]);
+}
+
+void Engine::setMouseCallback(GLFWmousebuttonfun fun) {
+	glfwSetMouseButtonCallback(window, fun);
 }

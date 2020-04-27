@@ -14,8 +14,11 @@
 #include <cstdint>
 #include <chrono>
 #include <array>
+#include <functional>
 
 #include "shapes.h"
+
+enum class ShaderBufferTypes { UBO, SSBO };
 
 static VkResult CreateDebugUtilsMessengerEXT(
 	VkInstance instance,
@@ -93,18 +96,32 @@ struct mvpMatricesObject {
 
 class Engine {
 public:
-	Engine(int width, int height, std::string title);
+	Engine(int width, int height, std::string title, ShaderBufferTypes shaderBufferType);
 	void addRect(Rect &rect);
 	void init();
 	void drawFrame();
 	void cleanup();
-
 	bool shouldClose();
 	void changeTitle(std::string fpsString);
-	void pollEvents();
+	void pollEvents();	
 	void updateMatrix(Rect &rect);
+	void setMouseCallback(GLFWmousebuttonfun fun);
+	bool checkMouseClick();
+	size_t rectCount = 0;
 
 private:
+	const int MAX_FRAMES_IN_FLIGHT = 2;
+
+	const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+
+	const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+#ifdef NDEBUG
+	const bool enableValidationLayers = false;
+#else
+	const bool enableValidationLayers = true;
+#endif
+
 	std::string title;
 
 	uint32_t width;
@@ -160,17 +177,26 @@ private:
 
 	glm::mat4 projViewMatrix;
 
-	mvpMatricesObject mvpMatrices;
+	ShaderBufferTypes shaderBufferType;
+
+	mvpMatricesObject mvpMatricesUbo;
+	mvpMatricesObject mvpMatricesSbo;
 	size_t uboAlignment;
-	size_t rectCount = 0;
+	size_t sboAlignment;
 
 	std::vector<VkBuffer> uniformBuffers;
 	std::vector<VkDeviceMemory> uniformBufferMemory;
 
+	std::vector<VkBuffer> storageBuffers;
+	std::vector<VkDeviceMemory> storageBufferMemory;
+
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
 
-	std::vector<bool> uniformNeedsUpdate;
+	std::vector<bool> shaderBufferNeedsUpdate;
+
+	const size_t PRE_ALLOCATED_UNIFORM_BUFFER_SIZE = 256;
+	const size_t PRE_ALLOCATED_STORAGE_BUFFER_SIZE = 3500; //~4096 for L2, ~32768 for L3
 
 	void initWindow();
 	void initVulkan();
@@ -206,23 +232,24 @@ private:
 
 	void createVertexBuffer();
 	void createIndexBuffer();
-	void getUboAlignment();
-	void createUniformBuffers();
+	void getAlignments();
+	void createUniformBuffer();
+	void createStorageBuffer();
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	void createDescriptorPool();
 	void createDescriptorSets();
 
-	void createCommandBuffers();
+	void createCommandBuffer();
+	void recordCommandBuffer();
 
 	void createSyncObjects();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	void updateUniformBuffer(uint32_t currentImage);
+	void updateStorageBuffer(uint32_t currentImage);
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
 	
 	void cleanupSwapChain();
-
-	static void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods);
 };
