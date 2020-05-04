@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
+//#define GLM_FORCE_AVX2
 #include <glm/vec3.hpp>
 
 #include <vector>
@@ -15,7 +16,7 @@
 
 #include "shapes.h"
 
-enum class ShaderBufferTypes { UBO, SSBO };
+enum class ShaderBufferType { UBO, SSBO };
 
 static VkResult CreateDebugUtilsMessengerEXT(
 	VkInstance instance,
@@ -93,9 +94,9 @@ struct mvpMatricesObject {
 
 class Engine {
 public:
-	Engine(int width, int height, std::string title, ShaderBufferTypes shaderBufferType);
-	void addRect(Rect &rect);
-	void addRects(std::vector<Rect> &rects);
+	Engine(int width, int height, std::string title, ShaderBufferType shaderBufferType);
+	bool addRect(Rect &rect);
+	bool addRects(std::vector<Rect> &rects);
 	void init();
 	void drawFrame();
 	void cleanup();
@@ -175,7 +176,7 @@ private:
 
 	glm::mat4 projViewMatrix;
 
-	ShaderBufferTypes shaderBufferType;
+	ShaderBufferType shaderBufferType;
 
 	mvpMatricesObject mvpMatricesUbo;
 	mvpMatricesObject mvpMatricesSbo;
@@ -194,7 +195,7 @@ private:
 	std::vector<bool> shaderBufferNeedsUpdate;
 
 	const size_t PRE_ALLOCATED_UNIFORM_BUFFER_SIZE = 256;
-	const size_t PRE_ALLOCATED_STORAGE_BUFFER_SIZE = 3500; //~4096 for L2, ~32768 for L3
+	const size_t PRE_ALLOCATED_STORAGE_BUFFER_SIZE = 100000; //~4096 for L2, ~32768 for L3
 
 	void initWindow();
 	void initVulkan();

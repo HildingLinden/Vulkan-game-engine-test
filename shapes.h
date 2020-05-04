@@ -7,18 +7,18 @@
 
 class Rect {
 public:
-	uint32_t x;
-	uint32_t y;
-	uint32_t width;
-	uint32_t height;
+	float x;
+	float y;
+	float width;
+	float height;
 	glm::mat4 modelMatrix = glm::mat4(1.0f);
 	glm::mat4 *mvpMatrix = nullptr;
 
-	Rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+	Rect(float x, float y, float width, float height);
 
-	void update(float timeElapsed);
+	void update(float timeElapsed, float boundingX, float boundingY);
 
-	void applyForce(glm::vec2 force, float timeElapsed);
+	void applyForce(glm::vec2 force);
 
 private:
 	glm::vec2 vel = glm::vec2(0.0f);

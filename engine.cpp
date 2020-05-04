@@ -1,4 +1,5 @@
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <iostream>
 #include <stdexcept>
@@ -9,18 +10,18 @@
 
 #include "engine.h"
 
-Engine::Engine(int width, int height, std::string, ShaderBufferTypes shaderBufferType) : width(width), height(height), title(title), shaderBufferType(shaderBufferType) {}
+Engine::Engine(int width, int height, std::string, ShaderBufferType shaderBufferType) : width(width), height(height), title(title), shaderBufferType(shaderBufferType) {}
 
 void Engine::init() {
 	initWindow();
 	initVulkan();
 }
 
-void Engine::addRect(Rect &rect) {
-	if (shaderBufferType == ShaderBufferTypes::UBO && rectCount >= PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
-		shaderBufferType == ShaderBufferTypes::SSBO && rectCount >= PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
+bool Engine::addRect(Rect &rect) {
+	if (shaderBufferType == ShaderBufferType::UBO && rectCount >= PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
+		shaderBufferType == ShaderBufferType::SSBO && rectCount >= PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
 		std::cerr << "Maximum rectangles already in use" << std::endl;
-		return;
+		return false;
 	}
 
 	vertices.push_back({ {rect.x, rect.y}, { 1.0f, 0.0f, 0.0f } });
@@ -37,10 +38,10 @@ void Engine::addRect(Rect &rect) {
 	indices.push_back(vertexCount + 3);
 	indices.push_back(vertexCount);
 
-	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+	if (shaderBufferType == ShaderBufferType::SSBO) {
 		rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (rectCount * sboAlignment));
 	}
-	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+	else if (shaderBufferType == ShaderBufferType::UBO) {
 		rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (rectCount * uboAlignment));
 	}
 	else {
@@ -54,23 +55,32 @@ void Engine::addRect(Rect &rect) {
 	rectCount++;
 
 	recreateVertexIndexCommandBuffers(init);
+
+	return true;
 }
 
-void Engine::addRects(std::vector<Rect> &rects) {
+bool Engine::addRects(std::vector<Rect> &rects) {
+	if (rects.size() == 0) {
+		std::cerr << "Tried to add empty vector of rects to engine" << std::endl;
+		return false;
+	}
+
 	size_t newRectCount = rectCount + rects.size();
-	if (shaderBufferType == ShaderBufferTypes::UBO && newRectCount > PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
-		shaderBufferType == ShaderBufferTypes::SSBO && newRectCount > PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
+	if (shaderBufferType == ShaderBufferType::UBO && newRectCount > PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
+		shaderBufferType == ShaderBufferType::SSBO && newRectCount > PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
 		std::cerr << "Number of rectangles would exceed pre allocated size" << std::endl;
-		return;
+		return false;
 	}
 
 	bool init = rectCount == 0;
 
 	for (size_t i = 0; i < rects.size(); i++) {
-		vertices.push_back({ {rects[i].x, rects[i].y}, { 1.0f, 0.0f, 0.0f } });
-		vertices.push_back({ {rects[i].x + rects[i].width, rects[i].y}, { 1.0f, 0.0f, 0.0f } });
-		vertices.push_back({ {rects[i].x + rects[i].width, rects[i].y + rects[i].height}, { 1.0f, 0.0f, 0.0f } });
-		vertices.push_back({ {rects[i].x, rects[i].y + rects[i].height}, { 1.0f, 0.0f, 0.0f } });
+		float width = rects[i].width;
+		float height = rects[i].height;
+		vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f } });
 
 
 		uint32_t vertexCount = (uint32_t)vertices.size() - 4;
@@ -81,10 +91,10 @@ void Engine::addRects(std::vector<Rect> &rects) {
 		indices.push_back(vertexCount + 3);
 		indices.push_back(vertexCount);
 
-		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		if (shaderBufferType == ShaderBufferType::SSBO) {
 			rects[i].mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (rectCount * sboAlignment));
 		}
-		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		else if (shaderBufferType == ShaderBufferType::UBO) {
 			rects[i].mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (rectCount * uboAlignment));
 		}
 		else {
@@ -97,6 +107,8 @@ void Engine::addRects(std::vector<Rect> &rects) {
 	}
 
 	recreateVertexIndexCommandBuffers(init);
+
+	return true;
 }
 
 void Engine::recreateVertexIndexCommandBuffers(bool init) {
@@ -140,7 +152,7 @@ void Engine::framebufferResizeCallback(GLFWwindow *window, int width, int height
 
 void Engine::updateMatrix(Rect &rect) {
 	// Update mvpMatrix in the mvpMatrix buffer
-	*rect.mvpMatrix = projViewMatrix * rect.modelMatrix;
+	*rect.mvpMatrix = rect.modelMatrix;
 
 	// All swapChainImages should now update the uniform buffer object when drawing
 	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
@@ -173,10 +185,10 @@ void Engine::initVulkan() {
 	// Shader buffer setup
 	getAlignments();
 
-	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+	if (shaderBufferType == ShaderBufferType::SSBO) {
 		createStorageBuffer();
 	}
-	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+	else if (shaderBufferType == ShaderBufferType::UBO) {
 		createUniformBuffer();
 	}
 	else {
@@ -213,10 +225,10 @@ void Engine::drawFrame() {
 
 	// Update the UBO or SSBO for this swapChainImage if the content in the buffer has changed
 	if (shaderBufferNeedsUpdate[imageIndex]) {
-		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		if (shaderBufferType == ShaderBufferType::SSBO) {
 			updateStorageBuffer(imageIndex);
 		} 
-		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		else if (shaderBufferType == ShaderBufferType::UBO) {
 			updateUniformBuffer(imageIndex);
 		}
 		else {
@@ -276,6 +288,7 @@ bool Engine::shouldClose() {
 }
 
 void Engine::changeTitle(std::string fpsString) {
+	fpsString += std::to_string(rectCount) + " rectangles";
 	glfwSetWindowTitle(window, fpsString.c_str());
 }
 
@@ -299,10 +312,10 @@ void Engine::cleanup() {
 
 	cleanupSwapChain();
 
-	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+	if (shaderBufferType == ShaderBufferType::SSBO) {
 		_aligned_free(mvpMatricesSbo.matrix);	
 	}
-	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+	else if (shaderBufferType == ShaderBufferType::UBO) {
 		_aligned_free(mvpMatricesUbo.matrix);
 	}
 	else {
@@ -310,11 +323,11 @@ void Engine::cleanup() {
 	}
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		if (shaderBufferType == ShaderBufferType::SSBO) {
 			vkDestroyBuffer(device, storageBuffers[i], nullptr);
 			vkFreeMemory(device, storageBufferMemory[i], nullptr);
 		}
-		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		else if (shaderBufferType == ShaderBufferType::UBO) {
 			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
 			vkFreeMemory(device, uniformBufferMemory[i], nullptr);
 		}
@@ -832,7 +845,7 @@ void Engine::createRenderPass() {
 void Engine::createDescriptorSetLayout() {
 	std::vector<VkDescriptorSetLayoutBinding> bindings;
 
-	if (shaderBufferType == ShaderBufferTypes::SSBO) {
+	if (shaderBufferType == ShaderBufferType::SSBO) {
 		VkDescriptorSetLayoutBinding sboLayoutBinding{};
 		sboLayoutBinding.binding = 1;
 		sboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
@@ -841,7 +854,7 @@ void Engine::createDescriptorSetLayout() {
 
 		bindings.push_back(sboLayoutBinding);
 	}
-	else if (shaderBufferType == ShaderBufferTypes::UBO) {
+	else if (shaderBufferType == ShaderBufferType::UBO) {
 		VkDescriptorSetLayoutBinding uboLayoutBinding{};
 		uboLayoutBinding.binding = 0; // binding in shader
 		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -963,17 +976,17 @@ void Engine::createGraphicsPipeline() {
 	colorBlending.attachmentCount = 1;
 	colorBlending.pAttachments = &colorBlendAttachment;
 
-	/*VkPushConstantRange pushConstantRange{};
+	VkPushConstantRange pushConstantRange{};
 	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	pushConstantRange.size = sizeof(mvpMatrices[0]);
-	pushConstantRange.offset = 0;*/
+	pushConstantRange.size = sizeof(projViewMatrix);
+	pushConstantRange.offset = 0;
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 1; // Uniforms
 	pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-	pipelineLayoutInfo.pushConstantRangeCount = 0; // Push constants
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	pipelineLayoutInfo.pushConstantRangeCount = 1; // Push constants
+	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
 	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to create a pipeline layout");
@@ -1257,14 +1270,14 @@ void Engine::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize siz
 void Engine::createDescriptorPool() {
 	std::vector<VkDescriptorPoolSize> poolSizes;
 
-	if (shaderBufferType == ShaderBufferTypes::UBO) {
+	if (shaderBufferType == ShaderBufferType::UBO) {
 		VkDescriptorPoolSize poolSizeUbo{};
 		poolSizeUbo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		poolSizeUbo.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
 
 		poolSizes.push_back(poolSizeUbo);
 	}
-	else if (shaderBufferType == ShaderBufferTypes::SSBO) {
+	else if (shaderBufferType == ShaderBufferType::SSBO) {
 		VkDescriptorPoolSize poolSizeSbo{};
 		poolSizeSbo.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 		poolSizeSbo.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
@@ -1303,7 +1316,7 @@ void Engine::createDescriptorSets() {
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		std::vector<VkWriteDescriptorSet> writes;
 
-		if (shaderBufferType == ShaderBufferTypes::UBO) {
+		if (shaderBufferType == ShaderBufferType::UBO) {
 			VkDescriptorBufferInfo bufferInfoUbo{};
 			bufferInfoUbo.buffer = uniformBuffers[i];
 			bufferInfoUbo.offset = 0;
@@ -1320,7 +1333,7 @@ void Engine::createDescriptorSets() {
 			
 			writes.push_back(descriptorWriteUbo);
 		}
-		else if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		else if (shaderBufferType == ShaderBufferType::SSBO) {
 			VkDescriptorBufferInfo bufferInfoSbo{};
 			bufferInfoSbo.buffer = storageBuffers[i];
 			bufferInfoSbo.offset = 0;
@@ -1395,15 +1408,17 @@ void Engine::recordCommandBuffer() {
 
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
+			vkCmdPushConstants(commandBuffers[i], pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(projViewMatrix), glm::value_ptr(projViewMatrix));
+
 			for (size_t j = 0; j < rectCount; j++) {
 				std::vector<uint32_t> offsets;
 
-				if (shaderBufferType == ShaderBufferTypes::SSBO) {
+				if (shaderBufferType == ShaderBufferType::SSBO) {
 					uint32_t sboOffset = static_cast<uint32_t>(j * sboAlignment);
 
 					offsets.push_back(sboOffset);
 				}
-				else if (shaderBufferType == ShaderBufferTypes::UBO) {
+				else if (shaderBufferType == ShaderBufferType::UBO) {
 					uint32_t uboOffset = static_cast<uint32_t>(j * uboAlignment);
 
 					offsets.push_back(uboOffset);
@@ -1524,10 +1539,10 @@ void Engine::updateProjectionMatrix() {
 	for (size_t i = 0; i < rectCount; i++) {
 		glm::mat4 *mat;
 
-		if (shaderBufferType == ShaderBufferTypes::SSBO) {
+		if (shaderBufferType == ShaderBufferType::SSBO) {
 			mat = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (i * sboAlignment));
 		}
-		else if (shaderBufferType == ShaderBufferTypes::UBO) {
+		else if (shaderBufferType == ShaderBufferType::UBO) {
 			mat = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (i * sboAlignment));
 		}
 		else {
