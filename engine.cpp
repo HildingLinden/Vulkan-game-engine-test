@@ -17,9 +17,16 @@ void Engine::init() {
 	initVulkan();
 }
 
+uint32_t Engine::getWidth() {
+	return swapChainExtent.width;
+}
+
+uint32_t Engine::getHeight() {
+	return swapChainExtent.height;
+}
+
 bool Engine::addRect(Rect &rect) {
-	if (shaderBufferType == ShaderBufferType::UBO && rectCount >= PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
-		shaderBufferType == ShaderBufferType::SSBO && rectCount >= PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
+	if (rectCount >= SHADER_BUFFER_MAX_OBJECT_COUNT) {
 		std::cerr << "Maximum rectangles already in use" << std::endl;
 		return false;
 	}
@@ -38,18 +45,8 @@ bool Engine::addRect(Rect &rect) {
 	indices.push_back(vertexCount + 3);
 	indices.push_back(vertexCount);
 
-	if (shaderBufferType == ShaderBufferType::SSBO) {
-		rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (rectCount * sboAlignment));
-	}
-	else if (shaderBufferType == ShaderBufferType::UBO) {
-		rect.mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (rectCount * uboAlignment));
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}
+	rect.modelMatrix = (glm::mat4*)((uint64_t)modelMatrices.matrix + (rectCount * shaderBufferAlignment));
 
-	*rect.mvpMatrix = projViewMatrix;
-	
 	bool init = rectCount == 0;
 
 	rectCount++;
@@ -66,8 +63,7 @@ bool Engine::addRects(std::vector<Rect> &rects) {
 	}
 
 	size_t newRectCount = rectCount + rects.size();
-	if (shaderBufferType == ShaderBufferType::UBO && newRectCount > PRE_ALLOCATED_UNIFORM_BUFFER_SIZE ||
-		shaderBufferType == ShaderBufferType::SSBO && newRectCount > PRE_ALLOCATED_STORAGE_BUFFER_SIZE) {
+	if (newRectCount > SHADER_BUFFER_MAX_OBJECT_COUNT) {
 		std::cerr << "Number of rectangles would exceed pre allocated size" << std::endl;
 		return false;
 	}
@@ -91,17 +87,7 @@ bool Engine::addRects(std::vector<Rect> &rects) {
 		indices.push_back(vertexCount + 3);
 		indices.push_back(vertexCount);
 
-		if (shaderBufferType == ShaderBufferType::SSBO) {
-			rects[i].mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (rectCount * sboAlignment));
-		}
-		else if (shaderBufferType == ShaderBufferType::UBO) {
-			rects[i].mvpMatrix = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (rectCount * uboAlignment));
-		}
-		else {
-			throw std::runtime_error("Unknown shaderBufferType used");
-		}
-
-		*rects[i].mvpMatrix = projViewMatrix;
+		rects[i].modelMatrix = (glm::mat4*)((uint64_t)modelMatrices.matrix + (rectCount * shaderBufferAlignment));
 
 		rectCount++;
 	}
@@ -150,14 +136,6 @@ void Engine::framebufferResizeCallback(GLFWwindow *window, int width, int height
 	app->frameBufferResized = true;
 }
 
-void Engine::updateMatrix(Rect &rect) {
-	// Update mvpMatrix in the mvpMatrix buffer
-	*rect.mvpMatrix = rect.modelMatrix;
-
-	// All swapChainImages should now update the uniform buffer object when drawing
-	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
-}
-
 void Engine::initVulkan() {
 	// Setup Vulkan instance
 	createInstance();
@@ -185,15 +163,7 @@ void Engine::initVulkan() {
 	// Shader buffer setup
 	getAlignments();
 
-	if (shaderBufferType == ShaderBufferType::SSBO) {
-		createStorageBuffer();
-	}
-	else if (shaderBufferType == ShaderBufferType::UBO) {
-		createUniformBuffer();
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}
+	createShaderBuffer();
 
 	createDescriptorPool();
 	createDescriptorSets();
@@ -224,18 +194,11 @@ void Engine::drawFrame() {
 	imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
 	// Update the UBO or SSBO for this swapChainImage if the content in the buffer has changed
-	if (shaderBufferNeedsUpdate[imageIndex]) {
-		if (shaderBufferType == ShaderBufferType::SSBO) {
-			updateStorageBuffer(imageIndex);
-		} 
-		else if (shaderBufferType == ShaderBufferType::UBO) {
-			updateUniformBuffer(imageIndex);
-		}
-		else {
-			throw std::runtime_error("Unknown shaderBufferType used");
-		}
-		shaderBufferNeedsUpdate[imageIndex] = false;
-	}
+	//if (shaderBufferNeedsUpdate[imageIndex]) {
+	memcpy(mappedDeviceMemPtrs[imageIndex], modelMatrices.matrix, SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment);
+	
+	shaderBufferNeedsUpdate[imageIndex] = false;
+	//}
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -312,28 +275,12 @@ void Engine::cleanup() {
 
 	cleanupSwapChain();
 
-	if (shaderBufferType == ShaderBufferType::SSBO) {
-		_aligned_free(mvpMatricesSbo.matrix);	
-	}
-	else if (shaderBufferType == ShaderBufferType::UBO) {
-		_aligned_free(mvpMatricesUbo.matrix);
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}
+	_aligned_free(modelMatrices.matrix);
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		if (shaderBufferType == ShaderBufferType::SSBO) {
-			vkDestroyBuffer(device, storageBuffers[i], nullptr);
-			vkFreeMemory(device, storageBufferMemory[i], nullptr);
-		}
-		else if (shaderBufferType == ShaderBufferType::UBO) {
-			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-			vkFreeMemory(device, uniformBufferMemory[i], nullptr);
-		}
-		else {
-			throw std::runtime_error("Unknown shaderBufferType used");
-		}
+		vkDestroyBuffer(device, shaderBuffers[i], nullptr);
+		vkUnmapMemory(device, shaderBufferMemory[i]);
+		vkFreeMemory(device, shaderBufferMemory[i], nullptr);
 	}
 
 	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -844,27 +791,25 @@ void Engine::createRenderPass() {
 
 void Engine::createDescriptorSetLayout() {
 	std::vector<VkDescriptorSetLayoutBinding> bindings;
+	VkDescriptorType descriptorType;
 
 	if (shaderBufferType == ShaderBufferType::SSBO) {
-		VkDescriptorSetLayoutBinding sboLayoutBinding{};
-		sboLayoutBinding.binding = 1;
-		sboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-		sboLayoutBinding.descriptorCount = 1;
-		sboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-		bindings.push_back(sboLayoutBinding);
+		descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 	}
 	else if (shaderBufferType == ShaderBufferType::UBO) {
-		VkDescriptorSetLayoutBinding uboLayoutBinding{};
-		uboLayoutBinding.binding = 0; // binding in shader
-		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		uboLayoutBinding.descriptorCount = 1;
-		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		bindings.push_back(uboLayoutBinding);
+		descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	}
 	else {
 		throw std::runtime_error("Unknown shaderBufferType used");
 	}
+
+	VkDescriptorSetLayoutBinding layoutBinding{};
+	layoutBinding.binding = 0; // binding in shader
+	layoutBinding.descriptorType = descriptorType;
+	layoutBinding.descriptorCount = 1;
+	layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	bindings.push_back(layoutBinding);
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1158,49 +1103,55 @@ void Engine::getAlignments() {
 	std::cout << "Max memory allocation count " << props.limits.maxMemoryAllocationCount << std::endl;
 	std::cout << "Max pushconstant size " << props.limits.maxPushConstantsSize << std::endl;*/
 
-	size_t minUboAlignment = props.limits.minUniformBufferOffsetAlignment;
-	size_t minSboAlignment = props.limits.minStorageBufferOffsetAlignment;
+	
+	
 	size_t alignment = sizeof(glm::mat4);
-	uboAlignment = (alignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
-	sboAlignment = (alignment + minSboAlignment - 1) & ~(minSboAlignment - 1);
+	if (shaderBufferType == ShaderBufferType::SSBO) {
+		size_t minSboAlignment = props.limits.minStorageBufferOffsetAlignment;
+		shaderBufferAlignment = (alignment + minSboAlignment - 1) & ~(minSboAlignment - 1);
+	}
+	else if (shaderBufferType == ShaderBufferType::UBO) {
+		size_t minUboAlignment = props.limits.minUniformBufferOffsetAlignment;
+		shaderBufferAlignment = (alignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
+	}
+	else {
+		throw std::runtime_error("Uknown shaderBufferType used");
+	}
 
 	size_t sboSize = props.limits.maxStorageBufferRange;
-	//std::cout << "Max amount of objects in storage buffer " << sboSize / sboAlignment << std::endl;
+	//std::cout << "Max amount of objects in storage buffer " << sboSize / shaderBufferAlignment << std::endl;
 }
 
-void Engine::createUniformBuffer() {
-	mvpMatricesUbo = {};
-	mvpMatricesUbo.matrix = (glm::mat4 *)_aligned_malloc(PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment, uboAlignment);
+void Engine::createShaderBuffer() {
+	modelMatrices = {};
+	VkDeviceSize bufferSize;
+	VkBufferUsageFlags usage;
 
-	VkDeviceSize bufferSize = PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment;
-
-	uniformBuffers.resize(swapChainImages.size());
-	uniformBufferMemory.resize(swapChainImages.size());
-
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		createBuffer(
-			bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			uniformBuffers[i], uniformBufferMemory[i]
-		);
+	if (shaderBufferType == ShaderBufferType::UBO) {
+		usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	}
-}
+	else if (shaderBufferType == ShaderBufferType::SSBO) {
+		usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}	
 
-void Engine::createStorageBuffer() {
-	mvpMatricesSbo = {};
-	mvpMatricesSbo.matrix = (glm::mat4 *)_aligned_malloc(PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment, sboAlignment);
+	modelMatrices.matrix = (glm::mat4 *)_aligned_malloc(SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment, shaderBufferAlignment);
+	bufferSize = SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment;
 
-	VkDeviceSize bufferSize = PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment;
-
-	storageBuffers.resize(swapChainImages.size());
-	storageBufferMemory.resize(swapChainImages.size());
+	shaderBuffers.resize(swapChainImages.size());
+	shaderBufferMemory.resize(swapChainImages.size());
+	mappedDeviceMemPtrs.resize(swapChainImages.size());
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		createBuffer(
-			bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+			bufferSize, usage,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			storageBuffers[i], storageBufferMemory[i]
+			shaderBuffers[i], shaderBufferMemory[i]
 		);
+
+		vkMapMemory(device, shaderBufferMemory[i], 0, SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment, 0, &mappedDeviceMemPtrs[i]);
 	}
 }
 
@@ -1212,7 +1163,7 @@ void Engine::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryP
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create vertex buffer");
+		throw std::runtime_error("Failed to create buffer");
 	}
 
 	VkMemoryRequirements memRequirements;
@@ -1269,24 +1220,23 @@ void Engine::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize siz
 
 void Engine::createDescriptorPool() {
 	std::vector<VkDescriptorPoolSize> poolSizes;
+	VkDescriptorType descriptorType;
 
 	if (shaderBufferType == ShaderBufferType::UBO) {
-		VkDescriptorPoolSize poolSizeUbo{};
-		poolSizeUbo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		poolSizeUbo.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-
-		poolSizes.push_back(poolSizeUbo);
+		descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	}
 	else if (shaderBufferType == ShaderBufferType::SSBO) {
-		VkDescriptorPoolSize poolSizeSbo{};
-		poolSizeSbo.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-		poolSizeSbo.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-
-		poolSizes.push_back(poolSizeSbo);
+		descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 	}
 	else {
 		throw std::runtime_error("Unknown shaderBufferType used");
 	}
+
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type = descriptorType;
+	poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+	poolSizes.push_back(poolSize);
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1313,46 +1263,35 @@ void Engine::createDescriptorSets() {
 		throw std::runtime_error("Failed to allocate descriptor sets");
 	}
 
+	VkDescriptorType descriptorType;
+	if (shaderBufferType == ShaderBufferType::UBO) {
+		descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+	}
+	else if (shaderBufferType == ShaderBufferType::SSBO) {
+		descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+	}
+	else {
+		throw std::runtime_error("Unknown shaderBufferType used");
+	}
+
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		std::vector<VkWriteDescriptorSet> writes;
 
-		if (shaderBufferType == ShaderBufferType::UBO) {
-			VkDescriptorBufferInfo bufferInfoUbo{};
-			bufferInfoUbo.buffer = uniformBuffers[i];
-			bufferInfoUbo.offset = 0;
-			bufferInfoUbo.range = VK_WHOLE_SIZE;
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = shaderBuffers[i];
+		bufferInfo.offset = 0;
+		bufferInfo.range = VK_WHOLE_SIZE;
 
-			VkWriteDescriptorSet descriptorWriteUbo{};
-			descriptorWriteUbo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptorWriteUbo.dstSet = descriptorSets[i];
-			descriptorWriteUbo.dstBinding = 0;
-			descriptorWriteUbo.dstArrayElement = 0;
-			descriptorWriteUbo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-			descriptorWriteUbo.descriptorCount = 1;
-			descriptorWriteUbo.pBufferInfo = &bufferInfoUbo;
-			
-			writes.push_back(descriptorWriteUbo);
-		}
-		else if (shaderBufferType == ShaderBufferType::SSBO) {
-			VkDescriptorBufferInfo bufferInfoSbo{};
-			bufferInfoSbo.buffer = storageBuffers[i];
-			bufferInfoSbo.offset = 0;
-			bufferInfoSbo.range = VK_WHOLE_SIZE;
+		VkWriteDescriptorSet descriptorWriteUbo{};
+		descriptorWriteUbo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWriteUbo.dstSet = descriptorSets[i];
+		descriptorWriteUbo.dstBinding = 0;
+		descriptorWriteUbo.dstArrayElement = 0;
+		descriptorWriteUbo.descriptorType = descriptorType;
+		descriptorWriteUbo.descriptorCount = 1;
+		descriptorWriteUbo.pBufferInfo = &bufferInfo;
 
-			VkWriteDescriptorSet descriptorWriteSbo{};
-			descriptorWriteSbo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptorWriteSbo.dstSet = descriptorSets[i];
-			descriptorWriteSbo.dstBinding = 1;
-			descriptorWriteSbo.dstArrayElement = 0;
-			descriptorWriteSbo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-			descriptorWriteSbo.descriptorCount = 1;
-			descriptorWriteSbo.pBufferInfo = &bufferInfoSbo;
-
-			writes.push_back(descriptorWriteSbo);
-		}
-		else {
-			throw std::runtime_error("Unknown shaderBufferType used");
-		}	
+		writes.push_back(descriptorWriteUbo);			
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
@@ -1414,12 +1353,12 @@ void Engine::recordCommandBuffer() {
 				std::vector<uint32_t> offsets;
 
 				if (shaderBufferType == ShaderBufferType::SSBO) {
-					uint32_t sboOffset = static_cast<uint32_t>(j * sboAlignment);
+					uint32_t sboOffset = static_cast<uint32_t>(j * shaderBufferAlignment);
 
 					offsets.push_back(sboOffset);
 				}
 				else if (shaderBufferType == ShaderBufferType::UBO) {
-					uint32_t uboOffset = static_cast<uint32_t>(j * uboAlignment);
+					uint32_t uboOffset = static_cast<uint32_t>(j * shaderBufferAlignment);
 
 					offsets.push_back(uboOffset);
 				}
@@ -1495,7 +1434,7 @@ void Engine::recreateSwapChain() {
 	//createDescriptorPool();
 	//createDescriptorSets();
 
-	updateProjectionMatrix();
+	projViewMatrix = glm::ortho(0.0f, (float)swapChainExtent.width, 0.0f, (float)swapChainExtent.height);
 	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
 	
 	vkResetCommandPool(device, commandPool, 0);
@@ -1515,40 +1454,6 @@ uint32_t Engine::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags prope
 	throw std::runtime_error("Failed to find suitable memory type");
 }
 
-void Engine::updateUniformBuffer(uint32_t currentImage) {
-	void *data;
-	vkMapMemory(device, uniformBufferMemory[currentImage], 0, PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment, 0, &data);
-	memcpy(data, mvpMatricesUbo.matrix, PRE_ALLOCATED_UNIFORM_BUFFER_SIZE * uboAlignment);
-	vkUnmapMemory(device, uniformBufferMemory[currentImage]);
-}
-
-void Engine::updateStorageBuffer(uint32_t currentImage) {
-	void *data;
-	vkMapMemory(device, storageBufferMemory[currentImage], 0, PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment, 0, &data);
-	memcpy(data, mvpMatricesSbo.matrix, PRE_ALLOCATED_STORAGE_BUFFER_SIZE * sboAlignment);
-	vkUnmapMemory(device, storageBufferMemory[currentImage]);
-}
-
 void Engine::setMouseCallback(GLFWmousebuttonfun fun) {
 	glfwSetMouseButtonCallback(window, fun);
-}
-
-void Engine::updateProjectionMatrix() {
-	projViewMatrix = glm::ortho(0.0f, (float)swapChainExtent.width, 0.0f, (float)swapChainExtent.height);
-
-	for (size_t i = 0; i < rectCount; i++) {
-		glm::mat4 *mat;
-
-		if (shaderBufferType == ShaderBufferType::SSBO) {
-			mat = (glm::mat4*)((uint64_t)mvpMatricesSbo.matrix + (i * sboAlignment));
-		}
-		else if (shaderBufferType == ShaderBufferType::UBO) {
-			mat = (glm::mat4*)((uint64_t)mvpMatricesUbo.matrix + (i * sboAlignment));
-		}
-		else {
-			throw std::runtime_error("Unknown shaderBufferType used");
-		}
-
-		*mat = projViewMatrix;
-	}
 }

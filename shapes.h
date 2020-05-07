@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
@@ -11,12 +12,11 @@ public:
 	float y;
 	float width;
 	float height;
-	glm::mat4 modelMatrix = glm::mat4(1.0f);
-	glm::mat4 *mvpMatrix = nullptr;
+	glm::mat4 *modelMatrix = nullptr;
 
 	Rect(float x, float y, float width, float height);
 
-	void update(float timeElapsed, float boundingX, float boundingY);
+	void update(float timeElapsed, float boundingX, float boundingY, std::vector<Rect> &rects);
 
 	void applyForce(glm::vec2 force);
 

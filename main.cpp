@@ -56,13 +56,17 @@ int main() {
 		// Main game loop
 		while (!app.shouldClose()) {
 			float timeElapsed = fpsCounter.getTime();
+			timeElapsed = std::min(timeElapsed, 0.1f);
+
+			uint32_t currentWidth = app.getWidth();
+			uint32_t currentHeight = app.getHeight();
 
 			// User input
 			app.pollEvents();			
 			if (app.checkMouseClick()) {
 				std::vector<Rect> tmpRects;
-				for (size_t i = 0; i < 1000; i++) {
-					Rect r(rand() % WIDTH, rand() % HEIGHT, 2, 2);
+				for (size_t i = 0; i < 1; i++) {
+					Rect r(rand() % currentWidth, rand() % currentHeight, 20, 20);
 					tmpRects.push_back(r);
 				}
 				if (app.addRects(tmpRects)) {
@@ -71,11 +75,10 @@ int main() {
 			}			
 
 			// Physics
-			#pragma omp parallel for 
+			//#pragma omp parallel for 
 			for (int i = 0; i < rects.size(); i++) {
 				rects[i].applyForce(glm::vec2(0.0f, 500.0f));
-				rects[i].update(timeElapsed, (float)WIDTH, (float)HEIGHT);
-				app.updateMatrix(rects[i]);
+				rects[i].update(timeElapsed, (float)currentWidth, (float)currentHeight, rects);
 			}
 
 			// Render

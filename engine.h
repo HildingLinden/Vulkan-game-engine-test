@@ -102,10 +102,11 @@ public:
 	void cleanup();
 	bool shouldClose();
 	void changeTitle(std::string fpsString);
-	void pollEvents();	
-	void updateMatrix(Rect &rect);
+	void pollEvents();
 	void setMouseCallback(GLFWmousebuttonfun fun);
 	bool checkMouseClick();
+	uint32_t getWidth();
+	uint32_t getHeight();
 	size_t rectCount = 0;
 
 private:
@@ -178,24 +179,20 @@ private:
 
 	ShaderBufferType shaderBufferType;
 
-	mvpMatricesObject mvpMatricesUbo;
-	mvpMatricesObject mvpMatricesSbo;
-	size_t uboAlignment;
-	size_t sboAlignment;
+	mvpMatricesObject modelMatrices;
+	size_t shaderBufferAlignment;
 
-	std::vector<VkBuffer> uniformBuffers;
-	std::vector<VkDeviceMemory> uniformBufferMemory;
+	std::vector<VkBuffer> shaderBuffers;
+	std::vector<VkDeviceMemory> shaderBufferMemory;
 
-	std::vector<VkBuffer> storageBuffers;
-	std::vector<VkDeviceMemory> storageBufferMemory;
+	std::vector<void *> mappedDeviceMemPtrs;
 
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
 
 	std::vector<bool> shaderBufferNeedsUpdate;
 
-	const size_t PRE_ALLOCATED_UNIFORM_BUFFER_SIZE = 256;
-	const size_t PRE_ALLOCATED_STORAGE_BUFFER_SIZE = 100000; //~4096 for L2, ~32768 for L3
+	const size_t SHADER_BUFFER_MAX_OBJECT_COUNT = 3000; //~4096 for L2, ~32768 for L3, 256 for UBO
 
 	void initWindow();
 	void initVulkan();
@@ -232,8 +229,7 @@ private:
 	void createVertexBuffer();
 	void createIndexBuffer();
 	void getAlignments();
-	void createUniformBuffer();
-	void createStorageBuffer();
+	void createShaderBuffer();
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	void createDescriptorPool();
@@ -245,14 +241,10 @@ private:
 	void createSyncObjects();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-	void updateUniformBuffer(uint32_t currentImage);
-	void updateStorageBuffer(uint32_t currentImage);
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
 
 	void recreateVertexIndexCommandBuffers(bool init);
-
-	void updateProjectionMatrix();
 	
 	void cleanupSwapChain();
 };
