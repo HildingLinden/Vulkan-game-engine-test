@@ -8,19 +8,18 @@
 
 class Rect {
 public:
-	float x;
-	float y;
-	float width;
-	float height;
+	// Position
+	float x, y;
+
+	// Dimensions
+	float width, height;
+
+	glm::vec2 vel = glm::vec2(0.0f);
+
+	bool isStatic;
+
 	glm::mat4 *modelMatrix = nullptr;
 
-	Rect(float x, float y, float width, float height);
-
-	void update(float timeElapsed, float boundingX, float boundingY, std::vector<Rect> &rects);
-
-	void applyForce(glm::vec2 force);
-
-private:
-	glm::vec2 vel = glm::vec2(0.0f);
-	glm::vec2 acc = glm::vec2(0.0f);
+	Rect(float x, float y, float width, float height, bool isStatic = true);
+	void update();
 };

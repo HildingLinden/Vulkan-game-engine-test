@@ -1,5 +1,6 @@
 #include "engine.h"
 #include "shapes.h"
+#include "physicsSystem.h"
 
 #include <iostream>
 #include <string>
@@ -53,33 +54,47 @@ int main() {
 
 		FPSCounter fpsCounter(title, app, 1.0f);
 
+		PhysicsSystem physics;
+
+		std::vector<Rect> tmpRects;
+		for (size_t i = 0; i < 5; i++) {
+			Rect r(rand() % WIDTH, rand() % HEIGHT, 50, 50);
+			tmpRects.push_back(r);
+		}
+
+		// Test if all new rects can be added to the graphics engine if so add them to rects
+		if (app.addRects(tmpRects)) {
+			rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
+			physics.updateObjects(rects);
+		}
+
 		// Main game loop
 		while (!app.shouldClose()) {
-			float timeElapsed = fpsCounter.getTime();
-			timeElapsed = std::min(timeElapsed, 0.1f);
+			float elapsedTime = fpsCounter.getTime();
+			elapsedTime = std::min(elapsedTime, 0.1f);
 
 			uint32_t currentWidth = app.getWidth();
 			uint32_t currentHeight = app.getHeight();
+
+			physics.setScreenBB(currentWidth, currentHeight);
 
 			// User input
 			app.pollEvents();			
 			if (app.checkMouseClick()) {
 				std::vector<Rect> tmpRects;
 				for (size_t i = 0; i < 1; i++) {
-					Rect r(rand() % currentWidth, rand() % currentHeight, 20, 20);
+					Rect r(rand() % currentWidth, rand() % currentHeight, 10, 10, false);
 					tmpRects.push_back(r);
 				}
 				if (app.addRects(tmpRects)) {
 					rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
+					physics.updateObjects(rects);
 				}
 			}			
 
 			// Physics
-			//#pragma omp parallel for 
-			for (int i = 0; i < rects.size(); i++) {
-				rects[i].applyForce(glm::vec2(0.0f, 500.0f));
-				rects[i].update(timeElapsed, (float)currentWidth, (float)currentHeight, rects);
-			}
+			//#pragma omp parallel for
+			physics.update(elapsedTime);
 
 			// Render
 			app.drawFrame();
