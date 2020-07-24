@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <thread>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -71,7 +72,12 @@ int main() {
 		// Main game loop
 		while (!app.shouldClose()) {
 			float elapsedTime = fpsCounter.getTime();
-			elapsedTime = std::min(elapsedTime, 0.1f);
+
+			// Limit fps
+			if (elapsedTime < 0.005) {
+				std::this_thread::sleep_for(std::chrono::microseconds(5000 - (long)(elapsedTime * 1000000)));
+				elapsedTime += fpsCounter.getTime();
+			}
 
 			uint32_t currentWidth = app.getWidth();
 			uint32_t currentHeight = app.getHeight();
