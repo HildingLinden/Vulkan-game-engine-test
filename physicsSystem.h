@@ -13,4 +13,6 @@ public:
 private:
 	std::vector<Rect> *objects;
 	float boundingX, boundingY;
+
+	float sweptAABB(Rect &currentRect);
 };

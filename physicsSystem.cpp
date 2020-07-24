@@ -44,3 +44,12 @@ void PhysicsSystem::setScreenBB(float width, float height) {
 	boundingY = height;
 }
 
+float PhysicsSystem::sweptAABB(Rect &currentRect) {
+	for (Rect &rect : *objects) {
+		if (rect.isStatic && &rect != &currentRect) {
+
+		}
+	}
+
+	return 0.0f;
+}
