@@ -42,8 +42,8 @@ public:
 
 std::vector<Rect> rects;
 
-const uint32_t WIDTH = 2300;
-const uint32_t HEIGHT = 1300;
+const uint32_t WIDTH = 1280;
+const uint32_t HEIGHT = 720;
 
 int main() {
 	try {
@@ -57,13 +57,26 @@ int main() {
 
 		PhysicsSystem physics;
 
+		srand((unsigned)time(NULL));
+
+		// Creating some static rectangles
 		std::vector<Rect> tmpRects;
 		for (size_t i = 0; i < 5; i++) {
-			Rect r(rand() % WIDTH, rand() % HEIGHT, 50, 50);
+			Rect r(200 + i * 50, 200, 50, 50);
 			tmpRects.push_back(r);
 		}
 
 		// Test if all new rects can be added to the graphics engine if so add them to rects
+		if (app.addRects(tmpRects)) {
+			rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
+			physics.updateObjects(rects);
+		}
+
+
+		for (size_t i = 0; i < 1; i++) {
+			Rect r(10, 10, 10, 10, false);
+			tmpRects.push_back(r);
+		}
 		if (app.addRects(tmpRects)) {
 			rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
 			physics.updateObjects(rects);
@@ -74,10 +87,10 @@ int main() {
 			float elapsedTime = fpsCounter.getTime();
 
 			// Limit fps
-			if (elapsedTime < 0.005) {
+			/*if (elapsedTime < 0.005) {
 				std::this_thread::sleep_for(std::chrono::microseconds(5000 - (long)(elapsedTime * 1000000)));
 				elapsedTime += fpsCounter.getTime();
-			}
+			}*/
 
 			uint32_t currentWidth = app.getWidth();
 			uint32_t currentHeight = app.getHeight();
@@ -85,22 +98,43 @@ int main() {
 			physics.setScreenBB(currentWidth, currentHeight);
 
 			// User input
-			app.pollEvents();			
-			if (app.checkMouseClick()) {
+			app.pollEvents();
+			if (app.checkKeyPress(GLFW_KEY_RIGHT)) {
+				for (Rect& rect : rects) {
+					rect.vel[0] += 500 * elapsedTime;
+				}
+			}
+			if (app.checkKeyPress(GLFW_KEY_LEFT)) {
+				for (Rect& rect : rects) {
+					rect.vel[0] -= 500 * elapsedTime;
+				}
+			}
+			if (app.checkKeyPress(GLFW_KEY_DOWN)) {
+				for (Rect& rect : rects) {
+					rect.vel[1] += 500 * elapsedTime;
+				}
+			}
+			if (app.checkKeyPress(GLFW_KEY_UP)) {
+				for (Rect& rect : rects) {
+					rect.vel[1] -= 750 * elapsedTime;
+				}
+			}
+/*			if (app.checkMouseClick()) {
 				std::vector<Rect> tmpRects;
 				for (size_t i = 0; i < 1; i++) {
-					Rect r(rand() % currentWidth, rand() % currentHeight, 10, 10, false);
+					Rect r(rand() % (currentWidth-10), rand() % (currentHeight-10), 10, 10, false);
 					tmpRects.push_back(r);
 				}
 				if (app.addRects(tmpRects)) {
 					rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
 					physics.updateObjects(rects);
 				}
-			}			
+			}*/			
 
 			// Physics
 			//#pragma omp parallel for
 			physics.update(elapsedTime);
+
 
 			// Render
 			app.drawFrame();

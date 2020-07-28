@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <chrono>
 #include <array>
+#include <string>
 
 #include "shapes.h"
 
@@ -105,6 +106,7 @@ public:
 	void pollEvents();
 	void setMouseCallback(GLFWmousebuttonfun fun);
 	bool checkMouseClick();
+	bool checkKeyPress(int key);
 	uint32_t getWidth();
 	uint32_t getHeight();
 	size_t rectCount = 0;

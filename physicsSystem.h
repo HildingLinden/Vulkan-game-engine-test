@@ -14,5 +14,5 @@ private:
 	std::vector<Rect> *objects;
 	float boundingX, boundingY;
 
-	float sweptAABB(Rect &currentRect);
+	bool sweptAABB(Rect &staticRect, Rect &currentRect, float velX, float velY, float &normalX, float &normalY, float &time);
 };

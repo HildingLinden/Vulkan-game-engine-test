@@ -262,12 +262,11 @@ void Engine::pollEvents() {
 bool Engine::checkMouseClick() {
 	int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 	return (state == GLFW_PRESS);
-		/*for (size_t i = 0; i < 100; i++) {
-			int x = round(rand() % 1920);
-			int y = round(rand() % 1080);
-			Rect r(x, y, 20, 20);
-			addRect(r);
-		}*/
+}
+
+bool Engine::checkKeyPress(int key) {
+	int state = glfwGetKey(window, key);
+	return (state == GLFW_PRESS);
 }
 
 void Engine::cleanup() {
