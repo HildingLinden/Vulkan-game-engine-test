@@ -1,4 +1,4 @@
-#include "engine.h"
+#include "graphicsEngine.h"
 #include "shapes.h"
 #include "physicsSystem.h"
 
@@ -16,9 +16,9 @@ private:
 	float fpsUpdateTimer = 0.0f;
 	int frameCount = 0;
 	std::string title;
-	Engine &app;
+	GraphicsEngine &app;
 public:
-	FPSCounter(std::string title, Engine &app, float interval) : title(title), app(app), fpsUpdateInterval(interval) {}
+	FPSCounter(std::string title, GraphicsEngine &app, float interval) : title(title), app(app), fpsUpdateInterval(interval) {}
 
 	float getTime() {
 		std::chrono::time_point<std::chrono::high_resolution_clock> currentTime = std::chrono::high_resolution_clock::now();
@@ -45,14 +45,14 @@ std::vector<Rect> rects;
 const uint32_t WIDTH = 1280;
 const uint32_t HEIGHT = 720;
 
-const bool LIMIT_FPS = false;
+const bool LIMIT_FPS = true;
 
 int main() {
 	try {
 		// Initialization
 		std::string title("Vulkan Test Application - ");
 
-		Engine app(WIDTH, HEIGHT, title, ShaderBufferType::SSBO);
+		GraphicsEngine app(WIDTH, HEIGHT, title, ShaderBufferType::SSBO);
 		app.init();		
 
 		FPSCounter fpsCounter(title, app, 1.0f);
@@ -70,7 +70,13 @@ int main() {
 				tmpRects.push_back(r);
 			}
 		}
-		Rect r(10, 10, 10, 10, false);
+
+		for (size_t i = 0; i < 500; i++) {
+			Rect r(100 + i * 2, 600, 2, 2);
+			tmpRects.push_back(r);
+		}
+
+		Rect r(100, 10, 30, 30, false);
 		tmpRects.push_back(r);
 
 		// Test if all new rects can be added to the graphics engine if so add them to rects
@@ -99,17 +105,19 @@ int main() {
 			if (app.checkKeyPress(GLFW_KEY_RIGHT)) {
 				for (Rect& rect : rects) {
 					rect.vel[0] += 500 * elapsedTime;
+					rect.vel[0] = std::min(200.0f, rect.vel[0]);			
 				}
 			}
 			if (app.checkKeyPress(GLFW_KEY_LEFT)) {
 				for (Rect& rect : rects) {
 					rect.vel[0] -= 500 * elapsedTime;
+					rect.vel[0] = std::max(-200.0f, rect.vel[0]);
 				}
 			}
 			if (app.checkKeyPress(GLFW_KEY_UP)) {
 				for (Rect& rect : rects) {
 					if (rect.canJump) {
-						rect.vel[1] -= 250;
+						rect.vel[1] -= 500;
 						rect.canJump = false;
 					}
 				}

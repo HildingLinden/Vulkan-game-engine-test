@@ -7,6 +7,9 @@
 //#define GLM_FORCE_AVX2
 #include <glm/vec3.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <vector>
 #include <cstring>
 #include <optional>
@@ -93,9 +96,9 @@ struct mvpMatricesObject {
 	glm::mat4 *matrix = nullptr;
 };
 
-class Engine {
+class GraphicsEngine {
 public:
-	Engine(int width, int height, std::string title, ShaderBufferType shaderBufferType);
+	GraphicsEngine(int width, int height, std::string title, ShaderBufferType shaderBufferType);
 	bool addRect(Rect &rect);
 	bool addRects(std::vector<Rect> &rects);
 	void init();

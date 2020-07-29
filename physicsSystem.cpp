@@ -55,12 +55,18 @@ void PhysicsSystem::update(float elapsedTime) {
 							rect.vel[0] -= rect.vel[0] * (1.0f - collisionTime);
 						}
 						else {
-							if (normalY < 0) rect.canJump = true;
+							// If landing on top
+							if (normalY < 0) {
+								rect.canJump = true;
+								rect.vel[0] *= 1.0f - elapsedTime * 2;
+							}
 							rect.vel[1] -= rect.vel[1] * (1.0f - collisionTime);
 						}
 					}
 				}
 			}
+
+			//std::cout << rect.vel[0] << std::endl;
 
 			// Set new position according to velocity and time since last frame
 			rect.x += rect.vel[0] * elapsedTime;
