@@ -231,6 +231,7 @@ private:
 	void createFramebuffers();
 	void createCommandPool();
 
+	void createTextureImage();
 	void createVertexBuffer();
 	void createIndexBuffer();
 	void getAlignments();

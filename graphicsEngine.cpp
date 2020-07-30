@@ -109,6 +109,7 @@ void GraphicsEngine::recreateVertexIndexCommandBuffers(bool init) {
 		vkFreeMemory(device, vertexBufferMemory, nullptr);		
 	}
 
+	createTextureImage();
 	createVertexBuffer();
 	createIndexBuffer();
 
@@ -1030,6 +1031,16 @@ void GraphicsEngine::createCommandPool() {
 
 	if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to create a command pool");
+	}
+}
+
+void GraphicsEngine::createTextureImage() {
+	int textureWidth, textureHeight, textureChannels;
+	stbi_uc *pixels = stbi_load("textures/player_right.png", &textureWidth, &textureHeight, &textureChannels, STBI_rgb_alpha);
+	VkDeviceSize imageSize = textureWidth * textureHeight * 4;
+	
+	if (!pixels) {
+		throw std::runtime_error("Failed to load texture image");
 	}
 }
 
