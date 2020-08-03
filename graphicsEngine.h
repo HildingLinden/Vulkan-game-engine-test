@@ -7,9 +7,6 @@
 //#define GLM_FORCE_AVX2
 #include <glm/vec3.hpp>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
 #include <vector>
 #include <cstring>
 #include <optional>
@@ -171,6 +168,10 @@ private:
 
 	bool frameBufferResized = false;
 
+	VkImage textureImage;
+	VkImageView textureImageView;
+	VkDeviceMemory textureImageMemory;
+
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 
@@ -223,6 +224,7 @@ private:
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR & capabilites);
 	void createImageViews();
+	VkImageView createImageView(VkImage image, VkFormat format);
 	void createRenderPass();
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
@@ -232,12 +234,21 @@ private:
 	void createCommandPool();
 
 	void createTextureImage();
+	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+	void createTextureImageView();
+	void createTextureSampler();
+
 	void createVertexBuffer();
 	void createIndexBuffer();
 	void getAlignments();
 	void createShaderBuffer();
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+	VkCommandBuffer beginSingleTimeCommands();
+	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
 	void createDescriptorPool();
 	void createDescriptorSets();
 
