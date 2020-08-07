@@ -76,10 +76,10 @@ bool GraphicsEngine::addRects(std::vector<Rect> &rects) {
 	for (size_t i = 0; i < rects.size(); i++) {
 		float width = rects[i].width;
 		float height = rects[i].height;
-		vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f } });
-		vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f } });
-		vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f } });
-		vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f } });
+		vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f }, {0.0f, 0.0f} });
+		vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f }, {1.0f, 0.0f} });
+		vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f }, {1.0f, 1.0f} });
+		vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f }, {0.0f, 1.0f} });
 
 
 		uint32_t vertexCount = (uint32_t)vertices.size() - 4;
@@ -112,8 +112,6 @@ void GraphicsEngine::recreateVertexIndexCommandBuffers(bool init) {
 		vkFreeMemory(device, vertexBufferMemory, nullptr);		
 	}
 
-	createTextureImage();
-	createTextureImageView();
 	createVertexBuffer();
 	createIndexBuffer();
 
@@ -171,6 +169,11 @@ void GraphicsEngine::initVulkan() {
 	createShaderBuffer();
 
 	createDescriptorPool();
+
+	// Move all texture & descriptor set +  things that depend on it to recreate????
+	createTextureImage();
+	createTextureImageView();
+	createTextureSampler();
 	createDescriptorSets();
 
 	createCommandBuffer();
@@ -279,6 +282,7 @@ void GraphicsEngine::cleanup() {
 
 	cleanupSwapChain();
 
+	vkDestroySampler(device, textureSampler, nullptr);
 	vkDestroyImageView(device, textureImageView, nullptr);
 
 	vkDestroyImage(device, textureImage, nullptr);
@@ -494,7 +498,10 @@ bool GraphicsEngine::isDeviceSuitable(VkPhysicalDevice device) {
 		swapChainSuitable = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
 	}
 
-	return indices.hasValue() && extensionsSupported && swapChainSuitable;
+	VkPhysicalDeviceFeatures supportedFeatures;
+	vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+	return indices.hasValue() && extensionsSupported && swapChainSuitable && supportedFeatures.samplerAnisotropy;
 }
 
 bool GraphicsEngine::checkDeviceExtensionSupport(VkPhysicalDevice device) {
@@ -572,6 +579,7 @@ void GraphicsEngine::createLogicalDevice() {
 
 
 	VkPhysicalDeviceFeatures deviceFeatures{};
+	deviceFeatures.samplerAnisotropy = VK_TRUE;
 
 	VkDeviceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -726,7 +734,6 @@ VkExtent2D GraphicsEngine::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capa
 void GraphicsEngine::createImageViews() {
 	swapChainImageViews.resize(swapChainImages.size());
 
-	// Change to advanced for loop??
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat);
 	}
@@ -821,11 +828,19 @@ void GraphicsEngine::createDescriptorSetLayout() {
 
 	VkDescriptorSetLayoutBinding layoutBinding{};
 	layoutBinding.binding = 0; // binding in shader
-	layoutBinding.descriptorType = descriptorType;
 	layoutBinding.descriptorCount = 1;
+	layoutBinding.descriptorType = descriptorType;	
 	layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	bindings.push_back(layoutBinding);
+
+	VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+	samplerLayoutBinding.binding = 1;
+	samplerLayoutBinding.descriptorCount = 1;
+	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding.pImmutableSamplers = nullptr;
+	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	bindings.push_back(samplerLayoutBinding);
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1205,9 +1220,26 @@ void GraphicsEngine::createTextureSampler() {
 	samplerInfo.magFilter = VK_FILTER_LINEAR; // Bilinear filtering
 	samplerInfo.minFilter = VK_FILTER_LINEAR;
 
-	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	samplerInfo.anisotropyEnable = VK_TRUE;
+	samplerInfo.maxAnisotropy = 16.0f; // Texture sampling 16x
+
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+	samplerInfo.compareEnable = VK_FALSE; // Shadow map antialiasing
+	samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	samplerInfo.mipLodBias = 0.0f;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+
+	if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create a texture sampler");
+	}
 }
 
 void GraphicsEngine::createVertexBuffer() {
@@ -1425,6 +1457,12 @@ void GraphicsEngine::createDescriptorPool() {
 
 	poolSizes.push_back(poolSize);
 
+	VkDescriptorPoolSize samplerPoolSize{};
+	samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerPoolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+	poolSizes.push_back(samplerPoolSize);
+
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
@@ -1469,16 +1507,32 @@ void GraphicsEngine::createDescriptorSets() {
 		bufferInfo.offset = 0;
 		bufferInfo.range = VK_WHOLE_SIZE;
 
-		VkWriteDescriptorSet descriptorWriteUbo{};
-		descriptorWriteUbo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWriteUbo.dstSet = descriptorSets[i];
-		descriptorWriteUbo.dstBinding = 0;
-		descriptorWriteUbo.dstArrayElement = 0;
-		descriptorWriteUbo.descriptorType = descriptorType;
-		descriptorWriteUbo.descriptorCount = 1;
-		descriptorWriteUbo.pBufferInfo = &bufferInfo;
+		VkWriteDescriptorSet bufferDescriptorWrite{};
+		bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		bufferDescriptorWrite.dstSet = descriptorSets[i];
+		bufferDescriptorWrite.dstBinding = 0;
+		bufferDescriptorWrite.dstArrayElement = 0;
+		bufferDescriptorWrite.descriptorType = descriptorType;
+		bufferDescriptorWrite.descriptorCount = 1;
+		bufferDescriptorWrite.pBufferInfo = &bufferInfo;
 
-		writes.push_back(descriptorWriteUbo);			
+		writes.push_back(bufferDescriptorWrite);	
+
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageInfo.imageView = textureImageView;
+		imageInfo.sampler = textureSampler;
+
+		VkWriteDescriptorSet samplerDescriptorWrite{};
+		samplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		samplerDescriptorWrite.dstSet = descriptorSets[i];
+		samplerDescriptorWrite.dstBinding = 1;
+		samplerDescriptorWrite.dstArrayElement = 0;
+		samplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		samplerDescriptorWrite.descriptorCount = 1;
+		samplerDescriptorWrite.pImageInfo = &imageInfo;
+
+		writes.push_back(samplerDescriptorWrite);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 	}
@@ -1519,7 +1573,7 @@ void GraphicsEngine::recordCommandBuffer() {
 		renderPassInfo.renderArea.offset = { 0,0 };
 		renderPassInfo.renderArea.extent = swapChainExtent;
 
-		VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+		VkClearValue clearColor = { 0.55f, 0.9f, 1.0f, 1.0f };
 		renderPassInfo.clearValueCount = 1;
 		renderPassInfo.pClearValues = &clearColor;
 

@@ -42,10 +42,10 @@ public:
 
 std::vector<Rect> rects;
 
-const uint32_t WIDTH = 1280;
-const uint32_t HEIGHT = 720;
+const uint32_t WIDTH = 1920;
+const uint32_t HEIGHT = 1080;
 
-const bool LIMIT_FPS = true;
+const bool LIMIT_FPS = false;
 
 int main() {
 	try {
@@ -63,10 +63,19 @@ int main() {
 		srand((unsigned)time(NULL));
 
 		// Creating some static rectangles
+		int nrPlatforms = 5;
+		int platformWidth = 10;
+		int rectSize = 20;
+
 		std::vector<Rect> tmpRects;
-		for (size_t i = 0; i < 50; i++) {
-			for (size_t j = 0; j < 10; j++) {
-				Rect r(100 + i * 2 + j * 100, 100 + j * 10, 2, 2);
+		for (size_t i = 0; i < nrPlatforms; i++) {
+			for (size_t j = 0; j < platformWidth; j++) {
+				Rect r(
+					200 + i * (platformWidth * rectSize + 30) + j * rectSize,
+					200 + i * (rectSize + 20),
+					rectSize,
+					rectSize
+				);
 				tmpRects.push_back(r);
 			}
 		}
@@ -76,7 +85,7 @@ int main() {
 			tmpRects.push_back(r);
 		}
 
-		Rect r(100, 10, 30, 30, false);
+		Rect r(100, 10, 50, 75, false);
 		tmpRects.push_back(r);
 
 		// Test if all new rects can be added to the graphics engine if so add them to rects
