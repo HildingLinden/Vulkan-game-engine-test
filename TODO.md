@@ -14,6 +14,8 @@
 - Materials (texture referece, sampler, material specific values)
 - UBO descriptor set per mesh
 - Use separate buffers for position, texture coordinates, color etc. instead of one unified vertex buffer?
+-Use push constants for both projection/view matrix and model matrix
+-Use one descriptor set per texture
 ### 2D
 - Drawing different geometries
 ### 3D
@@ -25,3 +27,5 @@
 - Broad phase collision detection
 - SAT collision detection
 - Diagonal collision detection
+
+You can use one sampler for all textures. Just like the graphics pipeline, vertex buffer and texture images it's a type of object that you'd switch if your mesh needs to be drawn in a different way.
