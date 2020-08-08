@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 layout(binding = 0) readonly buffer StorageBufferObject {
-	mat4 mvpMatrix;
+	mat4 modelMatrix;
 } sbo;
 
 layout(push_constant) uniform PushConstant {
@@ -17,7 +17,7 @@ layout(location = 0) out vec3 outColor;
 layout(location = 1) out vec2 outTexCoord;
 
 void main() {
-	gl_Position = pushConstant.projview * sbo.mvpMatrix * vec4(inPosition, 0.0, 1.0);
+	gl_Position = pushConstant.projview * sbo.modelMatrix * vec4(inPosition, 0.0, 1.0);
 	outColor = inColor;
 	outTexCoord = inTexCoord;
 }

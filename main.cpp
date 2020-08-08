@@ -67,6 +67,9 @@ int main() {
 		int platformWidth = 10;
 		int rectSize = 20;
 
+		app.createTexture("textures/ground.png");
+		app.createTexture("textures/player_right.png");
+
 		std::vector<Rect> tmpRects;
 		for (size_t i = 0; i < nrPlatforms; i++) {
 			for (size_t j = 0; j < platformWidth; j++) {
@@ -74,18 +77,19 @@ int main() {
 					200 + i * (platformWidth * rectSize + 30) + j * rectSize,
 					200 + i * (rectSize + 20),
 					rectSize,
-					rectSize
+					rectSize,
+					0
 				);
 				tmpRects.push_back(r);
 			}
 		}
 
 		for (size_t i = 0; i < 500; i++) {
-			Rect r(100 + i * 2, 600, 2, 2);
+			Rect r(100 + i * 2, 600, 2, 2, 0);
 			tmpRects.push_back(r);
 		}
 
-		Rect r(100, 10, 50, 75, false);
+		Rect r(100, 10, 50, 75, 1, false);
 		tmpRects.push_back(r);
 
 		// Test if all new rects can be added to the graphics engine if so add them to rects

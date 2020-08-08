@@ -102,6 +102,7 @@ struct mvpMatricesObject {
 class GraphicsEngine {
 public:
 	GraphicsEngine(int width, int height, std::string title, ShaderBufferType shaderBufferType);
+	void createTexture(std::string fileName);
 	bool addRect(Rect &rect);
 	bool addRects(std::vector<Rect> &rects);
 	void init();
@@ -111,6 +112,7 @@ public:
 	void changeTitle(std::string fpsString);
 	void pollEvents();
 	void setMouseCallback(GLFWmousebuttonfun fun);
+	void createDescriptors();
 	bool checkMouseClick();
 	bool checkKeyPress(int key);
 	uint32_t getWidth();
@@ -174,10 +176,12 @@ private:
 
 	bool frameBufferResized = false;
 
-	VkImage textureImage;
-	VkDeviceMemory textureImageMemory;
-	VkImageView textureImageView;
+	std::vector<VkImageView> textureImageViews;
+	VkDeviceMemory textureImageMemory;	
+
 	VkSampler textureSampler;
+
+	std::vector<int> textureIndices;
 
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
@@ -240,11 +244,10 @@ private:
 	void createFramebuffers();
 	void createCommandPool();
 
-	void createTextureImage();
+	VkImage createTextureImage(std::string fileName);
 	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-	void createTextureImageView();
 	void createTextureSampler();
 
 	void createVertexBuffer();
@@ -258,6 +261,7 @@ private:
 
 	void createDescriptorPool();
 	void createDescriptorSets();
+	void updateDescriptorSets();
 
 	void createCommandBuffer();
 	void recordCommandBuffer();
@@ -268,7 +272,7 @@ private:
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
 
-	void recreateVertexIndexCommandBuffers(bool init);
+	void createGameObjectData(bool init);
 	
 	void cleanupSwapChain();
 };

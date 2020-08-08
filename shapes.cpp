@@ -3,7 +3,7 @@
 
 #include <iostream>
 
-Rect::Rect(float x, float y, float width, float height, bool isStatic) : x(x), y(y), width(width), height(height), isStatic(isStatic) {
+Rect::Rect(float x, float y, float width, float height, int textureIndex, bool isStatic) : x(x), y(y), width(width), height(height), textureIndex(textureIndex), isStatic(isStatic) {
 	vel = glm::vec2(rand() % 201 - 100, 0.0f);
 }
 

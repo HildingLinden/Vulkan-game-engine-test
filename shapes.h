@@ -17,7 +17,8 @@ public:
 
 	glm::mat4 *modelMatrix = nullptr;
 
+	int textureIndex;
 
-	Rect(float x, float y, float width, float height, bool isStatic = true);
+	Rect(float x, float y, float width, float height, int textureIndex, bool isStatic = true);
 	void update();
 };
