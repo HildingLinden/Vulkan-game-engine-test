@@ -69,6 +69,7 @@ int main() {
 
 		app.createTexture("textures/ground.png");
 		app.createTexture("textures/player_right.png");
+		app.updateMaterialDescriptorSets();
 
 		std::vector<Rect> tmpRects;
 		for (size_t i = 0; i < nrPlatforms; i++) {

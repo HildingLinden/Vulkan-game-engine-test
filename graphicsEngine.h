@@ -112,7 +112,7 @@ public:
 	void changeTitle(std::string fpsString);
 	void pollEvents();
 	void setMouseCallback(GLFWmousebuttonfun fun);
-	void createDescriptors();
+	void updateMaterialDescriptorSets();
 	bool checkMouseClick();
 	bool checkKeyPress(int key);
 	uint32_t getWidth();
@@ -131,7 +131,7 @@ private:
 #else
 	const bool enableValidationLayers = true;
 #endif
-
+	std::vector<size_t> textureCount;
 	std::string title;
 
 	uint32_t width;
@@ -156,7 +156,7 @@ private:
 	VkExtent2D swapChainExtent;
 
 	VkRenderPass renderPass;
-	VkDescriptorSetLayout descriptorSetLayout;
+	VkDescriptorSetLayout descriptorSetLayout[2];
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
@@ -205,7 +205,7 @@ private:
 	std::vector<void *> mappedDeviceMemPtrs;
 
 	VkDescriptorPool descriptorPool;
-	std::vector<VkDescriptorSet> descriptorSets;
+	std::vector<VkDescriptorSet> descriptorSets[3];
 
 	std::vector<bool> shaderBufferNeedsUpdate;
 
@@ -261,7 +261,7 @@ private:
 
 	void createDescriptorPool();
 	void createDescriptorSets();
-	void updateDescriptorSets();
+	void updateModelDescriptorSets();
 
 	void createCommandBuffer();
 	void recordCommandBuffer();
