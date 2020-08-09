@@ -16,6 +16,7 @@
 GraphicsEngine::GraphicsEngine(int width, int height, std::string, ShaderBufferType shaderBufferType) : width(width), height(height), title(title), shaderBufferType(shaderBufferType) {}
 
 void GraphicsEngine::init() {
+	modelMatrices = (glm::mat4 *)malloc(sizeof(glm::mat4) * 5000);
 	initWindow();
 	initVulkan();
 }
@@ -48,7 +49,6 @@ bool GraphicsEngine::addRect(Rect &rect) {
 	indices.push_back(vertexCount + 3);
 	indices.push_back(vertexCount);
 
-	rect.modelMatrix = (glm::mat4*)((uint64_t)modelMatrices.matrix + (rectCount * shaderBufferAlignment));
 
 	textureCount[rect.textureIndex]++;
 
@@ -93,7 +93,9 @@ bool GraphicsEngine::addRects(std::vector<Rect> &rects) {
 		indices.push_back(vertexCount + 3);
 		indices.push_back(vertexCount);
 
-		rects[i].modelMatrix = (glm::mat4*)((uint64_t)modelMatrices.matrix + (rectCount * shaderBufferAlignment));
+
+		modelMatrices[rectCount] = glm::mat4(1.0f);
+		rects[i].modelMatrix = &modelMatrices[rectCount];
 
 		textureCount[rects[i].textureIndex]++;
 
@@ -121,11 +123,6 @@ void GraphicsEngine::createGameObjectData(bool init) {
 	createIndexBuffer();
 
 	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
-
-	// Reset command pool much faster than free and reallocate command buffer and little faster than reset command buffer
-	vkResetCommandPool(device, commandPool, 0); //VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT??
-
-	recordCommandBuffer();
 }
 
 void GraphicsEngine::createTexture(std::string fileName) {
@@ -195,7 +192,7 @@ void GraphicsEngine::initVulkan() {
 
 void GraphicsEngine::drawFrame() {
 	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);		
-		
+
 	uint32_t imageIndex;
 	VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 		
@@ -207,6 +204,7 @@ void GraphicsEngine::drawFrame() {
 		throw std::runtime_error("Failed to reobtain swap chain image");
 	}
 
+
 	if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
 		vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
 	}
@@ -214,10 +212,13 @@ void GraphicsEngine::drawFrame() {
 
 	// Update the UBO or SSBO for this swapChainImage if the content in the buffer has changed
 	//if (shaderBufferNeedsUpdate[imageIndex]) {
-	memcpy(mappedDeviceMemPtrs[imageIndex], modelMatrices.matrix, SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment);
-	
-	shaderBufferNeedsUpdate[imageIndex] = false;
+	// Update UBO here if needed each frame
+	//shaderBufferNeedsUpdate[imageIndex] = false;
 	//}
+
+	// Reset command pool much faster than free and reallocate command buffer and little faster than reset command buffer
+	//vkResetCommandPool(device, commandPool, 0); //VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT??
+	recordCommandBuffer(imageIndex);
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -299,8 +300,6 @@ void GraphicsEngine::cleanup() {
 	vkFreeMemory(device, textureImageMemory, nullptr);
 
 	vkDestroySampler(device, textureSampler, nullptr);
-
-	_aligned_free(modelMatrices.matrix);
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		vkDestroyBuffer(device, shaderBuffers[i], nullptr);
@@ -627,9 +626,9 @@ void GraphicsEngine::createSwapChain() {
 	VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
 	swapChainExtent = chooseSwapExtent(swapChainSupport.capabilities);
 
-	projViewMatrix = glm::ortho(0.0f, (float)swapChainExtent.width, 0.0f, (float)swapChainExtent.height);
-
 	swapChainImageFormat = surfaceFormat.format;
+
+	UBO.matrix = glm::ortho(0.0f, (float)swapChainExtent.width, 0.0f, (float)swapChainExtent.height);
 
 	// Set number of images in the swap chain
 	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -826,23 +825,11 @@ void GraphicsEngine::createRenderPass() {
 }
 
 void GraphicsEngine::createDescriptorSetLayout() {
-	VkDescriptorType descriptorType;
-
-	if (shaderBufferType == ShaderBufferType::SSBO) {
-		descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-	}
-	else if (shaderBufferType == ShaderBufferType::UBO) {
-		descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}
-
-	// UBO or SBO
+	// Uniform buffer for the projection & view matrix
 	VkDescriptorSetLayoutBinding layoutBinding{};
 	layoutBinding.binding = 0;
 	layoutBinding.descriptorCount = 1;
-	layoutBinding.descriptorType = descriptorType;	
+	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -992,23 +979,16 @@ void GraphicsEngine::createGraphicsPipeline() {
 
 	VkPushConstantRange vertexPushConstantRange{};
 	vertexPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	vertexPushConstantRange.size = sizeof(projViewMatrix);
+	vertexPushConstantRange.size = sizeof(glm::mat4);
 	vertexPushConstantRange.offset = 0;
 
 	pushConstants.push_back(vertexPushConstantRange);
-
-	VkPushConstantRange fragmentPushConstantRange{};
-	fragmentPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragmentPushConstantRange.size = sizeof(int);
-	fragmentPushConstantRange.offset = sizeof(projViewMatrix);
-
-	pushConstants.push_back(fragmentPushConstantRange);
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 2; // Uniform sets (not descriptor count)
 	pipelineLayoutInfo.pSetLayouts = descriptorSetLayout;
-	pipelineLayoutInfo.pushConstantRangeCount = 2; // Push constants
+	pipelineLayoutInfo.pushConstantRangeCount = 1; // Push constants
 	pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
 
 	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
@@ -1105,7 +1085,7 @@ void GraphicsEngine::createCommandPool() {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-	poolInfo.flags = 0; // transient_bit if rerecorded often, reset_command_buffer_bit if rerecorded individually
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // transient_bit if rerecorded often, reset_command_buffer_bit if rerecorded individually
 
 	if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to create a command pool");
@@ -1377,35 +1357,22 @@ void GraphicsEngine::getAlignments() {
 }
 
 void GraphicsEngine::createShaderBuffer() {
-	modelMatrices = {};
-	VkDeviceSize bufferSize;
-	VkBufferUsageFlags usage;
-
-	if (shaderBufferType == ShaderBufferType::UBO) {
-		usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-	}
-	else if (shaderBufferType == ShaderBufferType::SSBO) {
-		usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}	
-
-	modelMatrices.matrix = (glm::mat4 *)_aligned_malloc(SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment, shaderBufferAlignment);
-	bufferSize = SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment;
+	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
 	shaderBuffers.resize(swapChainImages.size());
 	shaderBufferMemory.resize(swapChainImages.size());
-	mappedDeviceMemPtrs.resize(swapChainImages.size());
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		createBuffer(
-			bufferSize, usage,
+			bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			shaderBuffers[i], shaderBufferMemory[i]
 		);
 
-		vkMapMemory(device, shaderBufferMemory[i], 0, SHADER_BUFFER_MAX_OBJECT_COUNT * shaderBufferAlignment, 0, &mappedDeviceMemPtrs[i]);
+		void* data;
+		vkMapMemory(device, shaderBufferMemory[i], 0, sizeof(UniformBufferObject), 0, &data);
+		memcpy(data, &UBO, sizeof(UniformBufferObject));
+		vkUnmapMemory(device, shaderBufferMemory[i]);
 	}
 }
 
@@ -1485,20 +1452,9 @@ void GraphicsEngine::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
 
 void GraphicsEngine::createDescriptorPool() {
 	std::vector<VkDescriptorPoolSize> poolSizes;
-	VkDescriptorType descriptorType;
-
-	if (shaderBufferType == ShaderBufferType::UBO) {
-		descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	}
-	else if (shaderBufferType == ShaderBufferType::SSBO) {
-		descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}
 
 	VkDescriptorPoolSize poolSize{};
-	poolSize.type = descriptorType;
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
 
 	poolSizes.push_back(poolSize);
@@ -1560,32 +1516,21 @@ void GraphicsEngine::createDescriptorSets() {
 }
 
 void GraphicsEngine::updateModelDescriptorSets() {
-	VkDescriptorType descriptorType;
-	if (shaderBufferType == ShaderBufferType::UBO) {
-		descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	}
-	else if (shaderBufferType == ShaderBufferType::SSBO) {
-		descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-	}
-	else {
-		throw std::runtime_error("Unknown shaderBufferType used");
-	}
-
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		std::vector<VkWriteDescriptorSet> writes;
 
 		VkDescriptorBufferInfo bufferInfo{};
 		bufferInfo.buffer = shaderBuffers[i];
 		bufferInfo.offset = 0;
-		bufferInfo.range = VK_WHOLE_SIZE;
+		bufferInfo.range = sizeof(UniformBufferObject);
 
-		// UBO or SBO
+		// Uniform buffer for the projection & view matrix
 		VkWriteDescriptorSet bufferDescriptorWrite{};
 		bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		bufferDescriptorWrite.dstSet = descriptorSets[0][i];
 		bufferDescriptorWrite.dstBinding = 0;
 		bufferDescriptorWrite.dstArrayElement = 0;
-		bufferDescriptorWrite.descriptorType = descriptorType;
+		bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bufferDescriptorWrite.descriptorCount = 1;
 		bufferDescriptorWrite.pBufferInfo = &bufferInfo;
 
@@ -1651,82 +1596,66 @@ void GraphicsEngine::createCommandBuffer() {
 	}
 }
 
-void GraphicsEngine::recordCommandBuffer() {
-	for (size_t i = 0; i < commandBuffers.size(); i++) {
-		VkCommandBufferBeginInfo beginInfo{};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfo.flags = 0; // USAGE_ONE_TIME_SUBMIT_BIT, USAGE_RENDER_PASS_CONTINUE_BIT, USAGE_SIMULTANEOUS_USE_BIT
-		beginInfo.pInheritanceInfo = nullptr; // If secondary buffer inherited from primary buffer
+void GraphicsEngine::recordCommandBuffer(int i) {
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = 0; // USAGE_ONE_TIME_SUBMIT_BIT, USAGE_RENDER_PASS_CONTINUE_BIT, USAGE_SIMULTANEOUS_USE_BIT
+	beginInfo.pInheritanceInfo = nullptr; // If secondary buffer inherited from primary buffer
 
-		if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to begin recording command buffer");
-		}
+	if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to begin recording command buffer");
+	}
 
-		VkRenderPassBeginInfo renderPassInfo{};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		renderPassInfo.renderPass = renderPass;
-		renderPassInfo.framebuffer = swapChainFramebuffers[i];
+	VkRenderPassBeginInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = renderPass;
+	renderPassInfo.framebuffer = swapChainFramebuffers[i];
 
-		renderPassInfo.renderArea.offset = { 0,0 };
-		renderPassInfo.renderArea.extent = swapChainExtent;
+	renderPassInfo.renderArea.offset = { 0,0 };
+	renderPassInfo.renderArea.extent = swapChainExtent;
 
-		VkClearValue clearColor = { 0.55f, 0.9f, 1.0f, 1.0f };
-		renderPassInfo.clearValueCount = 1;
-		renderPassInfo.pClearValues = &clearColor;
+	VkClearValue clearColor = { 0.55f, 0.9f, 1.0f, 1.0f };
+	renderPassInfo.clearValueCount = 1;
+	renderPassInfo.pClearValues = &clearColor;
 
-		vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // CONTENTS_SECONDARY_COMMAND_BUFFERS
+	vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // CONTENTS_SECONDARY_COMMAND_BUFFERS
 
-		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+	vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-		if (rectCount > 0) {
-			VkBuffer vertexBuffers[] = { vertexBuffer };
-			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+	if (rectCount > 0) {
+		VkBuffer vertexBuffers[] = { vertexBuffer };
+		VkDeviceSize offsets[] = { 0 };
+		vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-			vkCmdPushConstants(commandBuffers[i], pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(projViewMatrix), glm::value_ptr(projViewMatrix));
+		// Bind the projection & view matrix
+		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[0][i], 0, nullptr);
 
-			int rectIndex = 0;
-			for (size_t j = 0; j < textureCount.size(); j++) {
-				// Bind material descriptor set
-				vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &descriptorSets[j + 1][i], 0, nullptr);
+		int rectIndex = 0;
 
-				for (size_t h = 0; h < textureCount[j]; h++) {
-					//vkCmdPushConstants(commandBuffers[i], pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(projViewMatrix), sizeof(int), &textureIndices[rectIndex]);
+		// For each material
+		for (size_t j = 0; j < textureCount.size(); j++) {
 
-					std::vector<uint32_t> offsets;
+			// Bind material descriptor set
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &descriptorSets[j + 1][i], 0, nullptr);
 
-					if (shaderBufferType == ShaderBufferType::SSBO) {
-						uint32_t sboOffset = static_cast<uint32_t>(rectIndex * shaderBufferAlignment);
+			// For each object
+			for (size_t h = 0; h < textureCount[j]; h++) {
+				vkCmdPushConstants(commandBuffers[i], pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &modelMatrices[rectIndex]);
 
-						offsets.push_back(sboOffset);
-					}
-					else if (shaderBufferType == ShaderBufferType::UBO) {
-						uint32_t uboOffset = static_cast<uint32_t>(rectIndex * shaderBufferAlignment);
+				// Draw one rect
+				vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(rectIndex * 6), 0, 0);
 
-						offsets.push_back(uboOffset);
-					}
-					else {
-						throw std::runtime_error("Unknown shaderBufferType used");
-					}
-
-					// Bind buffer descriptor set
-					vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[0][i], static_cast<uint32_t>(offsets.size()), offsets.data());
-
-					// Draw one rect
-					vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(rectIndex * 6), 0, 0);
-
-					rectIndex++;
-				}
+				rectIndex++;
 			}
 		}
+	}
 
-		vkCmdEndRenderPass(commandBuffers[i]);
+	vkCmdEndRenderPass(commandBuffers[i]);
 
-		if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to end recording command buffer");
-		}
+	if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to end recording command buffer");
 	}
 }
 
@@ -1782,11 +1711,7 @@ void GraphicsEngine::recreateSwapChain() {
 	//createDescriptorPool();
 	//createDescriptorSets();
 
-	projViewMatrix = glm::ortho(0.0f, (float)swapChainExtent.width, 0.0f, (float)swapChainExtent.height);
-	std::fill(shaderBufferNeedsUpdate.begin(), shaderBufferNeedsUpdate.end(), true);
-	
 	vkResetCommandPool(device, commandPool, 0);
-	recordCommandBuffer();
 }
 
 uint32_t GraphicsEngine::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {

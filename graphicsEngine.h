@@ -95,8 +95,8 @@ struct Vertex {
 	}
 };
 
-struct mvpMatricesObject {
-	glm::mat4 *matrix = nullptr;
+struct UniformBufferObject {
+	glm::mat4 matrix;
 };
 
 class GraphicsEngine {
@@ -192,11 +192,11 @@ private:
 	VkBuffer indexBuffer;
 	VkDeviceMemory indexBufferMemory;
 
-	glm::mat4 projViewMatrix;
+	glm::mat4 *modelMatrices;
+	UniformBufferObject UBO{};
 
 	ShaderBufferType shaderBufferType;
 
-	mvpMatricesObject modelMatrices;
 	size_t shaderBufferAlignment;
 
 	std::vector<VkBuffer> shaderBuffers;
@@ -264,7 +264,7 @@ private:
 	void updateModelDescriptorSets();
 
 	void createCommandBuffer();
-	void recordCommandBuffer();
+	void recordCommandBuffer(int index);
 
 	void createSyncObjects();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);

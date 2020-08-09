@@ -86,7 +86,7 @@ int main() {
 		}
 
 		for (size_t i = 0; i < 500; i++) {
-			Rect r(100 + i * 2, 600, 2, 2, 0);
+			Rect r(100 + i * 2, 600, 30, 30, 0);
 			tmpRects.push_back(r);
 		}
 
@@ -112,6 +112,7 @@ int main() {
 			uint32_t currentWidth = app.getWidth();
 			uint32_t currentHeight = app.getHeight();
 
+			std::cout << currentWidth << std::endl;
 			physics.setScreenBB(currentWidth, currentHeight);
 
 			// User input
