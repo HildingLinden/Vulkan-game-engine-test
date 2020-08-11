@@ -101,7 +101,7 @@ struct UniformBufferObject {
 
 class GraphicsEngine {
 public:
-	GraphicsEngine(int width, int height, std::string title, ShaderBufferType shaderBufferType);
+	GraphicsEngine(int width, int height, std::string title);
 	void createTexture(std::string fileName);
 	bool addRect(Rect &rect);
 	bool addRects(std::vector<Rect> &rects);
@@ -112,7 +112,6 @@ public:
 	void changeTitle(std::string fpsString);
 	void pollEvents();
 	void setMouseCallback(GLFWmousebuttonfun fun);
-	void updateMaterialDescriptorSets();
 	bool checkMouseClick();
 	bool checkKeyPress(int key);
 	uint32_t getWidth();
@@ -156,7 +155,7 @@ private:
 	VkExtent2D swapChainExtent;
 
 	VkRenderPass renderPass;
-	VkDescriptorSetLayout descriptorSetLayout[2];
+	std::vector<VkDescriptorSetLayout> descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
@@ -195,17 +194,17 @@ private:
 	glm::mat4 *modelMatrices;
 	UniformBufferObject UBO{};
 
-	ShaderBufferType shaderBufferType;
-
 	size_t shaderBufferAlignment;
 
-	std::vector<VkBuffer> shaderBuffers;
-	std::vector<VkDeviceMemory> shaderBufferMemory;
+	std::vector<VkBuffer> projViewBuffers;
+	std::vector<VkDeviceMemory> projViewBufferMemory;
 
-	std::vector<void *> mappedDeviceMemPtrs;
+	std::vector<VkBuffer> modelBuffers;
+	std::vector<VkDeviceMemory> modelBufferMemory;
+	std::vector<void*> mappedDeviceMemPtrs;
 
 	VkDescriptorPool descriptorPool;
-	std::vector<VkDescriptorSet> descriptorSets[3];
+	std::vector<std::vector<VkDescriptorSet>> descriptorSets;
 
 	std::vector<bool> shaderBufferNeedsUpdate;
 
@@ -253,7 +252,8 @@ private:
 	void createVertexBuffer();
 	void createIndexBuffer();
 	void getAlignments();
-	void createShaderBuffer();
+	void createProjViewUBO();
+	void createModelUBOs();
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	VkCommandBuffer beginSingleTimeCommands();
@@ -261,10 +261,10 @@ private:
 
 	void createDescriptorPool();
 	void createDescriptorSets();
-	void updateModelDescriptorSets();
+	void updateDescriptorSets();
 
 	void createCommandBuffer();
-	void recordCommandBuffer(int index);
+	void recordCommandBuffer();
 
 	void createSyncObjects();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -275,4 +275,6 @@ private:
 	void createGameObjectData(bool init);
 	
 	void cleanupSwapChain();
+
+	void setupDescriptors();
 };

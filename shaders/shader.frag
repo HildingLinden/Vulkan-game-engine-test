@@ -3,7 +3,7 @@
 
 // Uniforms of sampler and texture
 layout(set = 1, binding = 0) uniform texture2D textureImage;
-layout(set = 1, binding = 1) uniform sampler textureSampler;
+layout(set = 0, binding = 1) uniform sampler textureSampler;
 
 // Color and texture coordinate that is interpolated from the vertex shader
 layout(location = 0) in vec3 fragColor;

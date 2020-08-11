@@ -45,14 +45,14 @@ std::vector<Rect> rects;
 const uint32_t WIDTH = 1920;
 const uint32_t HEIGHT = 1080;
 
-const bool LIMIT_FPS = false;
+const bool LIMIT_FPS = true;
 
 int main() {
 	try {
 		// Initialization
 		std::string title("Vulkan Test Application - ");
 
-		GraphicsEngine app(WIDTH, HEIGHT, title, ShaderBufferType::SSBO);
+		GraphicsEngine app(WIDTH, HEIGHT, title);
 		app.init();		
 
 		FPSCounter fpsCounter(title, app, 1.0f);
@@ -69,7 +69,6 @@ int main() {
 
 		app.createTexture("textures/ground.png");
 		app.createTexture("textures/player_right.png");
-		app.updateMaterialDescriptorSets();
 
 		std::vector<Rect> tmpRects;
 		for (size_t i = 0; i < nrPlatforms; i++) {
@@ -112,7 +111,6 @@ int main() {
 			uint32_t currentWidth = app.getWidth();
 			uint32_t currentHeight = app.getHeight();
 
-			std::cout << currentWidth << std::endl;
 			physics.setScreenBB(currentWidth, currentHeight);
 
 			// User input
@@ -137,21 +135,16 @@ int main() {
 					}
 				}
 			}
-/*			if (app.checkMouseClick()) {
-				std::vector<Rect> tmpRects;
-				for (size_t i = 0; i < 1; i++) {
-					Rect r(rand() % (currentWidth-10), rand() % (currentHeight-10), 10, 10, false);
-					tmpRects.push_back(r);
-				}
-				if (app.addRects(tmpRects)) {
-					rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
+			if (app.checkMouseClick()) {
+				/*Rect r(100, 10, 50, 75, 1, false);
+				if (app.addRect(r)) {
+					rects.push_back(r);
 					physics.updateObjects(rects);
-				}
-			}*/			
+				}*/
+			}
 
 			if (rects.size() > 0) {
 				// Physics
-				//#pragma omp parallel for
 				physics.update(elapsedTime);
 
 				// Render
