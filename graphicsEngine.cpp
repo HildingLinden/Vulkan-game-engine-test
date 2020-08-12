@@ -35,12 +35,13 @@ bool GraphicsEngine::addRect(Rect &rect) {
 		return false;
 	}
 
-	
-	void* tmpPtr = (glm::mat4*)realloc(modelMatrices, sizeof(glm::mat4) * (rectCount + 1));
-	if (!tmpPtr) {
-		throw std::runtime_error("Failed to allocate memory for model matrices");
+	void* tmpPtr = realloc(modelMatrices, sizeof(glm::mat4) * (rectCount + 1));
+	if (tmpPtr) {
+		modelMatrices = (glm::mat4*)tmpPtr;
 	}
-	modelMatrices = (glm::mat4*)tmpPtr;
+	else {
+		throw std::runtime_error("Failed to reallocate memory for model matrices");
+	}
 
 	vertices.push_back({ {rect.x, rect.y}, { 1.0f, 0.0f, 0.0f } });
 	vertices.push_back({ {rect.x + rect.width, rect.y}, { 1.0f, 0.0f, 0.0f } });
@@ -77,19 +78,20 @@ bool GraphicsEngine::addRects(std::vector<Rect> &rects) {
 		return false;
 	}
 
-	size_t newRectCount = rectCount + rects.size();
-	if (newRectCount > SHADER_BUFFER_MAX_OBJECT_COUNT) {
-		std::cerr << "Number of rectangles would exceed pre allocated size" << std::endl;
-		return false;
-	}
-
 	bool init = rectCount == 0;
 
-	void *tmpPtr = (glm::mat4*)realloc(modelMatrices, sizeof(glm::mat4) * (rectCount + rects.size()));
-	if (!tmpPtr) {
-		throw std::runtime_error("Failed to allocate memory for model matrices");
+	void* tmpPtr = realloc(modelMatrices, sizeof(glm::mat4) * (rectCount + rects.size()));
+	if (tmpPtr) {
+		modelMatrices = (glm::mat4 *)tmpPtr;
 	}
-	modelMatrices = (glm::mat4 *)tmpPtr;
+	else {
+		throw std::runtime_error("Failed to reallocate memory for model matrices");
+	}
+
+	vertices.clear();
+	indices.clear();
+	std::fill(textureCount.begin(), textureCount.end(), 0);
+	rectCount = 0;
 
 	for (size_t i = 0; i < rects.size(); i++) {
 		float width = rects[i].width;
@@ -1424,7 +1426,7 @@ void GraphicsEngine::createModelUBOs() {
 				modelBuffers[i * rectCount + j], modelBufferMemory[i * rectCount + j]
 			);
 
-			vkMapMemory(device, modelBufferMemory[i * rectCount + j], 0, sizeof(UniformBufferObject), 0, &mappedDeviceMemPtrs[i * rectCount + j]);
+			vkMapMemory(device, modelBufferMemory[i * rectCount + j], 0, bufferSize, 0, &mappedDeviceMemPtrs[i * rectCount + j]);
 		}
 	}
 }
@@ -1532,7 +1534,7 @@ void GraphicsEngine::createDescriptorPool() {
 }
 
 void GraphicsEngine::createDescriptorSets() {
-	descriptorSets.resize(1 + textureCount.size() + rectCount);
+	descriptorSets.resize(1 + swapChainImages.size() * 2);
 
 	// Scene
 	std::vector<VkDescriptorSetLayout> sceneLayouts(swapChainImages.size(), descriptorSetLayout[0]);

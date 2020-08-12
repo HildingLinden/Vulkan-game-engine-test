@@ -44,6 +44,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level4</WarningLevel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>E:\VulkanSDK\1.2.135.0\Lib;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\lib-vc2019</AdditionalLibraryDirectories>

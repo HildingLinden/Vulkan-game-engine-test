@@ -89,9 +89,6 @@ int main() {
 			tmpRects.push_back(r);
 		}
 
-		Rect r(100, 10, 50, 75, 1, false);
-		tmpRects.push_back(r);
-
 		// Test if all new rects can be added to the graphics engine if so add them to rects
 		if (app.addRects(tmpRects)) {
 			rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
@@ -136,11 +133,12 @@ int main() {
 				}
 			}
 			if (app.checkMouseClick()) {
-				/*Rect r(100, 10, 50, 75, 1, false);
-				if (app.addRect(r)) {
-					rects.push_back(r);
+				Rect r(100, 10, 50, 75, 1, false);
+				tmpRects.push_back(r);
+				if (app.addRects(tmpRects)) {
+					rects = tmpRects;
 					physics.updateObjects(rects);
-				}*/
+				}
 			}
 
 			if (rects.size() > 0) {
