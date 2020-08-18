@@ -8,5 +8,7 @@ Rect::Rect(float x, float y, float width, float height, int textureIndex, bool i
 }
 
 void Rect::update() {
-	*modelMatrix = glm::translate(glm::vec3(x, y, 0.0f));
+	if (modelMatrix) {
+		*modelMatrix = glm::translate(glm::vec3(x, y, 0.0f));
+	}
 }

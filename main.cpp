@@ -45,7 +45,7 @@ std::vector<Rect> rects;
 const uint32_t WIDTH = 1920;
 const uint32_t HEIGHT = 1080;
 
-const bool LIMIT_FPS = true;
+const bool LIMIT_FPS = false;
 
 int main() {
 	try {
@@ -67,8 +67,8 @@ int main() {
 		int platformWidth = 10;
 		int rectSize = 20;
 
-		app.createTexture("textures/ground.png");
-		app.createTexture("textures/player_right.png");
+		app.createTextureImage("textures/ground.png");
+		app.createTextureImage("textures/player_right.png");
 
 		std::vector<Rect> tmpRects;
 		for (size_t i = 0; i < nrPlatforms; i++) {
@@ -89,8 +89,11 @@ int main() {
 			tmpRects.push_back(r);
 		}
 
+		Rect r(100, 10, 50, 75, 1, false);
+		tmpRects.push_back(r);
+
 		// Test if all new rects can be added to the graphics engine if so add them to rects
-		if (app.addRects(tmpRects)) {
+		if (app.updateRectList(tmpRects)) {
 			rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
 			physics.updateObjects(rects);
 		}
@@ -133,14 +136,15 @@ int main() {
 				}
 			}
 			if (app.checkMouseClick()) {
-				Rect r(100, 10, 50, 75, 1, false);
+				Rect r(rand() % (WIDTH - 100), rand() & (HEIGHT - 100), 100, 100, 0);
 				tmpRects.push_back(r);
-				if (app.addRects(tmpRects)) {
+				if (app.updateRectList(tmpRects)) {
 					rects = tmpRects;
 					physics.updateObjects(rects);
 				}
 			}
 
+			
 			if (rects.size() > 0) {
 				// Physics
 				physics.update(elapsedTime);

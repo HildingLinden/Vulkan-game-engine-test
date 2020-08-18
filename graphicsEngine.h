@@ -99,15 +99,41 @@ struct UniformBufferObject {
 	glm::mat4 matrix;
 };
 
+struct Material {
+	int count = 0;
 
+	std::vector<Vertex> vertices;
+	VkBuffer vertexBuffer = NULL;
+	VkDeviceMemory vertexBufferMemory = NULL;
+
+	std::vector<uint32_t> indices;
+	VkBuffer indexBuffer = NULL;
+	VkDeviceMemory indexBufferMemory = NULL;
+
+	glm::mat4* modelMatrices = nullptr;
+
+	~Material() { 
+		free(modelMatrices);
+	}
+
+	void reset(int rectCount) {
+		vertices.clear();
+		vertices.reserve(rectCount * 4);
+
+		indices.clear();
+		indices.reserve(rectCount * 6);
+
+		count = 0;
+
+		free(modelMatrices);
+	}
+};
 
 
 class GraphicsEngine {
 public:
 	GraphicsEngine(int width, int height, std::string title);
-	void createTexture(std::string fileName);
-	bool addRect(Rect &rect);
-	bool addRects(std::vector<Rect> &rects);
+	bool updateRectList(std::vector<Rect> &rects);
 	void init();
 	void drawFrame();
 	void cleanup();
@@ -117,6 +143,7 @@ public:
 	void setMouseCallback(GLFWmousebuttonfun fun);
 	bool checkMouseClick();
 	bool checkKeyPress(int key);
+	void createTextureImage(std::string fileName);
 	uint32_t getWidth();
 	uint32_t getHeight();
 	size_t rectCount = 0;
@@ -128,12 +155,11 @@ private:
 
 	const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-#ifdef NDEBUG
-	const bool enableValidationLayers = false;
-#else
+#ifdef _DEBUG
 	const bool enableValidationLayers = true;
+#else
+	const bool enableValidationLayers = false;
 #endif
-	std::vector<size_t> textureCount;
 	std::string title;
 
 	uint32_t width;
@@ -178,23 +204,14 @@ private:
 
 	bool frameBufferResized = false;
 
+	std::vector<Material> materials;
+
+	std::vector<VkImage> textureImages;
 	std::vector<VkImageView> textureImageViews;
 	VkDeviceMemory textureImageMemory;	
 
 	VkSampler textureSampler;
 
-	std::vector<int> textureIndices;
-
-	std::vector<Vertex> vertices;
-	std::vector<uint32_t> indices;
-
-	VkBuffer vertexBuffer;
-	VkDeviceMemory vertexBufferMemory;
-
-	VkBuffer indexBuffer;
-	VkDeviceMemory indexBufferMemory;
-
-	glm::mat4 *modelMatrices;
 	UniformBufferObject UBO{};
 
 	size_t shaderBufferAlignment;
@@ -246,7 +263,6 @@ private:
 	void createFramebuffers();
 	void createCommandPool();
 
-	VkImage createTextureImage(std::string fileName);
 	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
