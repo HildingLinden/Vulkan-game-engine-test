@@ -71,9 +71,6 @@ int main() {
 		int platformWidth = 10;
 		int rectSize = 20;
 
-		app.createMaterial("textures/ground.png");
-		app.createMaterial("textures/player_right.png");
-
 		for (size_t i = 0; i < nrPlatforms; i++) {
 			for (size_t j = 0; j < platformWidth; j++) {
 				gameObjects.addRect(
@@ -81,16 +78,16 @@ int main() {
 					200 + i * (rectSize + 20),
 					rectSize,
 					rectSize,
-					0
+					"textures/ground.png"
 				);
 			}
 		}
 
 		for (size_t i = 0; i < 500; i++) {
-			gameObjects.addRect(100 + i * 2, 600, 30, 30, 0);
+			gameObjects.addRect(100 + i * 2, 600, 30, 30, "textures/ground.png");
 		}
 
-		gameObjects.addRect(100, 10, 50, 75, 1, false);
+		gameObjects.addRect(100, 10, 50, 75, "textures/player_right.png", false);
 
 		// Main game loop
 		while (!app.shouldClose()) {
@@ -131,7 +128,7 @@ int main() {
 			}
 			if (app.checkMouseClick()) {
 				for (size_t i = 0; i < 1000; i++) {
-					gameObjects.addRect(rand() % (WIDTH - 100), rand() & (HEIGHT - 100), 100, 100, 0);
+					gameObjects.addRect(rand() % (WIDTH - 100), rand() & (HEIGHT - 100), 100, 100, "textures/ground.png");
 				}
 			}
 
@@ -140,7 +137,7 @@ int main() {
 
 			if (gameObjects.rects.size() > 0) {
 				// Physics
-				//physics.update(elapsedTime);
+				physics.update(elapsedTime);
 
 				// Render
 				app.drawFrame();

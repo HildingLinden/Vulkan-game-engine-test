@@ -37,26 +37,38 @@ bool GraphicsEngine::addRects(std::vector<Rect> &rects) {
 	for (Rect &rect : rects) {
 		float width = rect.width;
 		float height = rect.height;
-		int textureIndex = rect.textureIndex;
 
-		Material &material = materials[textureIndex];
+		// Find correct material
+		Material *materialRef = nullptr;
+		for (Material &material : materials) {
+			if (rect.texture == material.texture) {
+				materialRef = &material;
+				break;
+			}
+		}
 
-		material.vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f }, {0.0f, 0.0f} });
-		material.vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f }, {1.0f, 0.0f} });
-		material.vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f }, {1.0f, 1.0f} });
-		material.vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f }, {0.0f, 1.0f} });
+		// Create the material if no material has the texture of the rect
+		if (!materialRef) {
+			createMaterial(rect.texture);
+			materialRef = &materials.back();
+		}
+
+		materialRef->vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f }, {0.0f, 0.0f} });
+		materialRef->vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f }, {1.0f, 0.0f} });
+		materialRef->vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f }, {1.0f, 1.0f} });
+		materialRef->vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f }, {0.0f, 1.0f} });
 
 
-		uint32_t vertexCount = (uint32_t)material.vertices.size() - 4;
-		material.indices.push_back(vertexCount);
-		material.indices.push_back(vertexCount + 1);
-		material.indices.push_back(vertexCount + 2);
-		material.indices.push_back(vertexCount + 2);
-		material.indices.push_back(vertexCount + 3);
-		material.indices.push_back(vertexCount);
+		uint32_t vertexCount = (uint32_t)materialRef->vertices.size() - 4;
+		materialRef->indices.push_back(vertexCount);
+		materialRef->indices.push_back(vertexCount + 1);
+		materialRef->indices.push_back(vertexCount + 2);
+		materialRef->indices.push_back(vertexCount + 2);
+		materialRef->indices.push_back(vertexCount + 3);
+		materialRef->indices.push_back(vertexCount);
 
-		material.newCount++;
-		material.modelMatrices.push_back(rect.modelMatrix);
+		materialRef->newCount++;
+		materialRef->modelMatrices.push_back(rect.modelMatrix);
 	}
 
 	// destroy descriptorpool and reset commandpool if they have already been initialized
@@ -1084,7 +1096,7 @@ void GraphicsEngine::createCommandPool() {
 }
 
 void GraphicsEngine::createMaterial(std::string fileName) {
-	Material material(swapChainImages.size());
+	Material material(swapChainImages.size(), fileName);
 
 	// Load texture image
 	int textureWidth, textureHeight, textureChannels;

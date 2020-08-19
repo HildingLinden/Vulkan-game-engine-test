@@ -8,8 +8,8 @@
 - Add staging buffer to modelUBO
 - Improve memory layout for descriptors
 - Improve object descriptor (modelMatrix) updates
-- Automatic creation of textures
 - Fix resizing
+- Changing the texture of a retangle without having to remove and add it again
 ### 2D
 - Drawing different geometries
 ### 3D

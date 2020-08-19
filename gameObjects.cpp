@@ -2,8 +2,8 @@
 
 GameObjects::GameObjects(GraphicsEngine *graphicsEnginePtr) : graphicsEnginePtr(graphicsEnginePtr) {}
 
-void GameObjects::addRect(float x, float y, float width, float height, int textureIndex, bool isStatic) {
-	newRects.push_back(Rect(x, y, width, height, textureIndex, isStatic));
+void GameObjects::addRect(float x, float y, float width, float height, std::string texture, bool isStatic) {
+	newRects.push_back(Rect(x, y, width, height, texture, isStatic));
 }
 
 void GameObjects::checkNewRects() {

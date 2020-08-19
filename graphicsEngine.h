@@ -17,8 +17,6 @@
 
 #include "shapes.h"
 
-enum class ShaderBufferType { UBO, SSBO };
-
 static VkResult CreateDebugUtilsMessengerEXT(
 	VkInstance instance,
 	const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -123,7 +121,9 @@ struct Material {
 	VkImage textureImage = VkImage();
 	VkImageView textureImageView = VkImageView();
 
-	Material(size_t swapChainImageSize) {
+	std::string texture;
+
+	Material(size_t swapChainImageSize, std::string texture) : texture(texture) {
 		modelBuffers.resize(swapChainImageSize);
 		modelBufferMemory.resize(swapChainImageSize);
 		mappedDeviceMemPtrs.resize(swapChainImageSize);

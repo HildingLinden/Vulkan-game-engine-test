@@ -13,6 +13,6 @@ public:
 	GraphicsEngine *graphicsEnginePtr;
 
 	GameObjects(GraphicsEngine *graphicsEnginePtr);
-	void addRect(float x, float y, float width, float height, int textureIndex, bool isStatic = true);
+	void addRect(float x, float y, float width, float height, std::string texture, bool isStatic = true);
 	void checkNewRects();
 };

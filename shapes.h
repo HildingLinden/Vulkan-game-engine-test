@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <string>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
@@ -17,8 +18,8 @@ public:
 
 	glm::mat4 *modelMatrix = new glm::mat4(1.0f);
 
-	int textureIndex;
+	std::string texture;
 
-	Rect(float x, float y, float width, float height, int textureIndex, bool isStatic = true);
+	Rect(float x, float y, float width, float height, std::string texture, bool isStatic = true);
 	void update();
 };
