@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <iostream>
 
-PhysicsSystem::PhysicsSystem() {}
+PhysicsSystem::PhysicsSystem(std::vector<Rect>* objects) : objects(objects) {}
 
 void PhysicsSystem::update(float elapsedTime) {
 	for (Rect &rect : *objects) {
@@ -92,10 +92,6 @@ void PhysicsSystem::update(float elapsedTime) {
 		}
 		rect.update();
 	}
-}
-
-void PhysicsSystem::updateObjects(std::vector<Rect> &newObjects) {
-	objects = &newObjects;
 }
 
 void PhysicsSystem::setScreenBB(float width, float height) {

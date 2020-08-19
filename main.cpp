@@ -1,6 +1,7 @@
 #include "graphicsEngine.h"
 #include "shapes.h"
 #include "physicsSystem.h"
+#include "gameObjects.h"
 
 #include <iostream>
 #include <string>
@@ -16,9 +17,9 @@ private:
 	float fpsUpdateTimer = 0.0f;
 	int frameCount = 0;
 	std::string title;
-	GraphicsEngine &app;
+	GraphicsEngine *app;
 public:
-	FPSCounter(std::string title, GraphicsEngine &app, float interval) : title(title), app(app), fpsUpdateInterval(interval) {}
+	FPSCounter(std::string title, GraphicsEngine *app, float interval) : title(title), app(app), fpsUpdateInterval(interval) {}
 
 	float getTime() {
 		std::chrono::time_point<std::chrono::high_resolution_clock> currentTime = std::chrono::high_resolution_clock::now();
@@ -31,23 +32,24 @@ public:
 
 		if (fpsUpdateTimer > fpsUpdateInterval) {
 			int fps = round(frameCount / fpsUpdateTimer);
-			app.changeTitle(title + std::to_string(fps) + " fps - ");
+			app->changeTitle(title + std::to_string(fps) + " fps - ");
 			fpsUpdateTimer = 0.0f;
 			frameCount = 0;
 		}
-
+		 
 		return elapsedTime.count();
 	}
 };
 
 std::vector<Rect> rects;
 
-const uint32_t WIDTH = 1920;
-const uint32_t HEIGHT = 1080;
+uint32_t WIDTH = 1920;
+uint32_t HEIGHT = 1080;
 
 const bool LIMIT_FPS = false;
 
 int main() {
+
 	try {
 		// Initialization
 		std::string title("Vulkan Test Application - ");
@@ -55,9 +57,11 @@ int main() {
 		GraphicsEngine app(WIDTH, HEIGHT, title);
 		app.init();		
 
-		FPSCounter fpsCounter(title, app, 1.0f);
+		GameObjects gameObjects(&app);
 
-		PhysicsSystem physics;
+		FPSCounter fpsCounter(title, &app, 1.0f);
+
+		PhysicsSystem physics(&gameObjects.rects);
 
 		// Seeding the RNG
 		srand((unsigned)time(NULL));
@@ -67,36 +71,26 @@ int main() {
 		int platformWidth = 10;
 		int rectSize = 20;
 
-		app.createTextureImage("textures/ground.png");
-		app.createTextureImage("textures/player_right.png");
+		app.createMaterial("textures/ground.png");
+		app.createMaterial("textures/player_right.png");
 
-		std::vector<Rect> tmpRects;
 		for (size_t i = 0; i < nrPlatforms; i++) {
 			for (size_t j = 0; j < platformWidth; j++) {
-				Rect r(
+				gameObjects.addRect(
 					200 + i * (platformWidth * rectSize + 30) + j * rectSize,
 					200 + i * (rectSize + 20),
 					rectSize,
 					rectSize,
 					0
 				);
-				tmpRects.push_back(r);
 			}
 		}
 
 		for (size_t i = 0; i < 500; i++) {
-			Rect r(100 + i * 2, 600, 30, 30, 0);
-			tmpRects.push_back(r);
+			gameObjects.addRect(100 + i * 2, 600, 30, 30, 0);
 		}
 
-		Rect r(100, 10, 50, 75, 1, false);
-		tmpRects.push_back(r);
-
-		// Test if all new rects can be added to the graphics engine if so add them to rects
-		if (app.updateRectList(tmpRects)) {
-			rects.insert(std::end(rects), std::begin(tmpRects), std::end(tmpRects));
-			physics.updateObjects(rects);
-		}
+		gameObjects.addRect(100, 10, 50, 75, 1, false);
 
 		// Main game loop
 		while (!app.shouldClose()) {
@@ -116,19 +110,19 @@ int main() {
 			// User input
 			app.pollEvents();
 			if (app.checkKeyPress(GLFW_KEY_RIGHT)) {
-				for (Rect& rect : rects) {
+				for (Rect& rect : gameObjects.rects) {
 					rect.vel[0] += 500 * elapsedTime;
 					rect.vel[0] = std::min(200.0f, rect.vel[0]);			
 				}
 			}
 			if (app.checkKeyPress(GLFW_KEY_LEFT)) {
-				for (Rect& rect : rects) {
+				for (Rect& rect : gameObjects.rects) {
 					rect.vel[0] -= 500 * elapsedTime;
 					rect.vel[0] = std::max(-200.0f, rect.vel[0]);
 				}
 			}
 			if (app.checkKeyPress(GLFW_KEY_UP)) {
-				for (Rect& rect : rects) {
+				for (Rect& rect : gameObjects.rects) {
 					if (rect.canJump) {
 						rect.vel[1] -= 500;
 						rect.canJump = false;
@@ -136,18 +130,17 @@ int main() {
 				}
 			}
 			if (app.checkMouseClick()) {
-				Rect r(rand() % (WIDTH - 100), rand() & (HEIGHT - 100), 100, 100, 0);
-				tmpRects.push_back(r);
-				if (app.updateRectList(tmpRects)) {
-					rects = tmpRects;
-					physics.updateObjects(rects);
+				for (size_t i = 0; i < 1000; i++) {
+					gameObjects.addRect(rand() % (WIDTH - 100), rand() & (HEIGHT - 100), 100, 100, 0);
 				}
 			}
 
 			
-			if (rects.size() > 0) {
+			gameObjects.checkNewRects();
+
+			if (gameObjects.rects.size() > 0) {
 				// Physics
-				physics.update(elapsedTime);
+				//physics.update(elapsedTime);
 
 				// Render
 				app.drawFrame();

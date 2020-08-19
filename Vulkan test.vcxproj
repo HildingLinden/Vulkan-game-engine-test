@@ -67,12 +67,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="gameObjects.cpp" />
     <ClCompile Include="graphicsEngine.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="physicsSystem.cpp" />
     <ClCompile Include="shapes.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="gameObjects.h" />
     <ClInclude Include="graphicsEngine.h" />
     <ClInclude Include="physicsSystem.h" />
     <ClInclude Include="shapes.h" />

@@ -15,7 +15,7 @@ public:
 	bool isStatic;
 	bool canJump = false;
 
-	glm::mat4 *modelMatrix = nullptr;
+	glm::mat4 *modelMatrix = new glm::mat4(1.0f);
 
 	int textureIndex;
 

@@ -55,7 +55,7 @@ struct QueueFamilyIndices {
 };
 
 struct SwapChainSupportDetails {
-	VkSurfaceCapabilitiesKHR capabilities;
+	VkSurfaceCapabilitiesKHR capabilities = {};
 	std::vector<VkSurfaceFormatKHR> formats;
 	std::vector <VkPresentModeKHR> presentModes;
 };
@@ -100,40 +100,43 @@ struct UniformBufferObject {
 };
 
 struct Material {
-	int count = 0;
+	size_t count = 0;
+	size_t newCount = 0;
 
 	std::vector<Vertex> vertices;
-	VkBuffer vertexBuffer = NULL;
-	VkDeviceMemory vertexBufferMemory = NULL;
+	VkBuffer vertexBuffer = VkBuffer();
+	VkDeviceMemory vertexBufferMemory = VkDeviceMemory();
 
 	std::vector<uint32_t> indices;
-	VkBuffer indexBuffer = NULL;
-	VkDeviceMemory indexBufferMemory = NULL;
+	VkBuffer indexBuffer = VkBuffer();
+	VkDeviceMemory indexBufferMemory = VkDeviceMemory();
 
-	glm::mat4* modelMatrices = nullptr;
+	std::vector<std::vector<VkBuffer>> modelBuffers;
+	std::vector<std::vector<VkDeviceMemory>> modelBufferMemory;
+	std::vector<std::vector<void*>> mappedDeviceMemPtrs;
 
-	~Material() { 
-		free(modelMatrices);
-	}
+	std::vector<glm::mat4 *> modelMatrices;
 
-	void reset(int rectCount) {
-		vertices.clear();
-		vertices.reserve(rectCount * 4);
+	std::vector<std::vector<VkDescriptorSet>> objectDescriptorSets;
+	std::vector<VkDescriptorSet> materialDescriptorSets;
 
-		indices.clear();
-		indices.reserve(rectCount * 6);
+	VkImage textureImage = VkImage();
+	VkImageView textureImageView = VkImageView();
 
-		count = 0;
+	Material(size_t swapChainImageSize) {
+		modelBuffers.resize(swapChainImageSize);
+		modelBufferMemory.resize(swapChainImageSize);
+		mappedDeviceMemPtrs.resize(swapChainImageSize);
 
-		free(modelMatrices);
+		materialDescriptorSets.resize(swapChainImageSize);
+		objectDescriptorSets.resize(swapChainImageSize);
 	}
 };
 
-
 class GraphicsEngine {
 public:
-	GraphicsEngine(int width, int height, std::string title);
-	bool updateRectList(std::vector<Rect> &rects);
+	GraphicsEngine(uint32_t width, uint32_t height, std::string title);
+	bool addRects(std::vector<Rect> &rects);
 	void init();
 	void drawFrame();
 	void cleanup();
@@ -143,7 +146,7 @@ public:
 	void setMouseCallback(GLFWmousebuttonfun fun);
 	bool checkMouseClick();
 	bool checkKeyPress(int key);
-	void createTextureImage(std::string fileName);
+	void createMaterial(std::string fileName);
 	uint32_t getWidth();
 	uint32_t getHeight();
 	size_t rectCount = 0;
@@ -206,8 +209,6 @@ private:
 
 	std::vector<Material> materials;
 
-	std::vector<VkImage> textureImages;
-	std::vector<VkImageView> textureImageViews;
 	VkDeviceMemory textureImageMemory;	
 
 	VkSampler textureSampler;
@@ -219,12 +220,8 @@ private:
 	std::vector<VkBuffer> projViewBuffers;
 	std::vector<VkDeviceMemory> projViewBufferMemory;
 
-	std::vector<VkBuffer> modelBuffers;
-	std::vector<VkDeviceMemory> modelBufferMemory;
-	std::vector<void*> mappedDeviceMemPtrs;
-
 	VkDescriptorPool descriptorPool;
-	std::vector<std::vector<VkDescriptorSet>> descriptorSets;
+	std::vector<VkDescriptorSet> cameraDescriptorSets;
 
 	std::vector<bool> shaderBufferNeedsUpdate;
 
@@ -268,11 +265,11 @@ private:
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 	void createTextureSampler();
 
-	void createVertexBuffer();
-	void createIndexBuffer();
+	void createVertexBuffer(Material &material);
+	void createIndexBuffer(Material &material);
 	void getAlignments();
 	void createProjViewUBO();
-	void createModelUBOs();
+	void createModelUBOs(Material &material);
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	VkCommandBuffer beginSingleTimeCommands();
@@ -290,10 +287,6 @@ private:
 
 	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
-
-	void createGameObjectData(bool init);
 	
 	void cleanupSwapChain();
-
-	void setupDescriptors();
 };
