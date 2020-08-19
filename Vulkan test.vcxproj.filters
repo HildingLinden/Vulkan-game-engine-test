@@ -15,33 +15,33 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\gameObjects.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="shapes.cpp">
+    <ClCompile Include="src\graphicsEngine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="physicsSystem.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="graphicsEngine.cpp">
+    <ClCompile Include="src\physicsSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gameObjects.cpp">
+    <ClCompile Include="src\shapes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="shapes.h">
+    <ClInclude Include="src\gameObjects.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="physicsSystem.h">
+    <ClInclude Include="src\graphicsEngine.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="graphicsEngine.h">
+    <ClInclude Include="src\physicsSystem.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gameObjects.h">
+    <ClInclude Include="src\shapes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

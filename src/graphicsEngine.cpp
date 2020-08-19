@@ -158,7 +158,7 @@ void GraphicsEngine::initVulkan() {
 	createFramebuffers();
 	createCommandPool();
 
-	//getAlignments();
+	getDeviceInfo();
 
 	createCommandBuffer();
 
@@ -1328,38 +1328,13 @@ void GraphicsEngine::createIndexBuffer(Material &material) {
 	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void GraphicsEngine::getAlignments() {
+void GraphicsEngine::getDeviceInfo() {
 	VkPhysicalDeviceProperties props{};
 	vkGetPhysicalDeviceProperties(physicalDevice, &props);
 
-	/*std::cout << "Max dynamic ubos " << props.limits.maxDescriptorSetUniformBuffersDynamic << std::endl;
-	std::cout << "Max dynamic ubo size " << props.limits.maxUniformBufferRange << std::endl;
-	std::cout << "Min ubo alignment " << props.limits.minUniformBufferOffsetAlignment << "\n" << std::endl;
-
-	std::cout << "Max storage buffer " << props.limits.maxDescriptorSetStorageBuffersDynamic << std::endl;
-	std::cout << "Max storage buffer size " << props.limits.maxStorageBufferRange << std::endl;
-	std::cout << "Storage buffer alignment " << props.limits.minStorageBufferOffsetAlignment << "\n" << std::endl;
-
-	std::cout << "Max memory allocation count " << props.limits.maxMemoryAllocationCount << std::endl;
-	std::cout << "Max pushconstant size " << props.limits.maxPushConstantsSize << std::endl;*/
-
-	
-	
-	/*size_t alignment = sizeof(glm::mat4);
-	if (shaderBufferType == ShaderBufferType::SSBO) {
-		size_t minSboAlignment = props.limits.minStorageBufferOffsetAlignment;
-		shaderBufferAlignment = (alignment + minSboAlignment - 1) & ~(minSboAlignment - 1);
-	}
-	else if (shaderBufferType == ShaderBufferType::UBO) {
-		size_t minUboAlignment = props.limits.minUniformBufferOffsetAlignment;
-		shaderBufferAlignment = (alignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
-	}
-	else {
-		throw std::runtime_error("Uknown shaderBufferType used");
-	}*/
-
-	size_t sboSize = props.limits.maxStorageBufferRange;
-	//std::cout << "Max amount of objects in storage buffer " << sboSize / shaderBufferAlignment << std::endl;
+	std::cout << "Device name: " << props.deviceName << "\n";
+	std::cout << "Max memory allocation count: " << props.limits.maxMemoryAllocationCount << "\n";
+	std::cout << "Max descriptor set count: " << props.limits.maxDescriptorSetUniformBuffers << "\n";
 }
 
 void GraphicsEngine::createProjViewUBO() {

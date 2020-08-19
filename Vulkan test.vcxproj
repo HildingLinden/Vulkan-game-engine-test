@@ -67,17 +67,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="gameObjects.cpp" />
-    <ClCompile Include="graphicsEngine.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="physicsSystem.cpp" />
-    <ClCompile Include="shapes.cpp" />
+    <ClCompile Include="src\gameObjects.cpp" />
+    <ClCompile Include="src\graphicsEngine.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\physicsSystem.cpp" />
+    <ClCompile Include="src\shapes.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="gameObjects.h" />
-    <ClInclude Include="graphicsEngine.h" />
-    <ClInclude Include="physicsSystem.h" />
-    <ClInclude Include="shapes.h" />
+    <ClInclude Include="src\gameObjects.h" />
+    <ClInclude Include="src\graphicsEngine.h" />
+    <ClInclude Include="src\physicsSystem.h" />
+    <ClInclude Include="src\shapes.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -31,7 +31,7 @@ public:
 		frameCount++;
 
 		if (fpsUpdateTimer > fpsUpdateInterval) {
-			int fps = round(frameCount / fpsUpdateTimer);
+			int fps = (int)round(frameCount / fpsUpdateTimer);
 			app->changeTitle(title + std::to_string(fps) + " fps - ");
 			fpsUpdateTimer = 0.0f;
 			frameCount = 0;
@@ -67,9 +67,9 @@ int main() {
 		srand((unsigned)time(NULL));
 
 		// Creating some static rectangles
-		int nrPlatforms = 5;
-		int platformWidth = 10;
-		int rectSize = 20;
+		size_t nrPlatforms = 5;
+		size_t platformWidth = 10;
+		size_t rectSize = 20;
 
 		for (size_t i = 0; i < nrPlatforms; i++) {
 			for (size_t j = 0; j < platformWidth; j++) {

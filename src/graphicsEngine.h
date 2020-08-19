@@ -267,7 +267,7 @@ private:
 
 	void createVertexBuffer(Material &material);
 	void createIndexBuffer(Material &material);
-	void getAlignments();
+	void getDeviceInfo();
 	void createProjViewUBO();
 	void createModelUBOs(Material &material);
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
