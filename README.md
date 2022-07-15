@@ -1,2 +1,8 @@
-# Vulkan-test
-Repository for learning the Vulkan API
+# Vulkan game engine
+This aim of this project is to learn how to make a game engine from scratch as well as learn how to use the Vulkan graphics API.  
+
+# Versions
+The 2D-engine branch is my first attempt at using the Vulkan API and the 3D-engine branch is a rebuilt engine using the knowledge gained from the first try and some new optimisation techniques.  
+As the name suggests the physics and graphics of the first engine is only in two dimensions while the newer is 3D.
+
+# Resources
