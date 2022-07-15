@@ -5,13 +5,13 @@
 
 class PhysicsSystem {
 public:
-	PhysicsSystem();
+	PhysicsSystem(std::vector<Rect> *objects);
 	void update(float elapsedTime);
-	void updateObjects(std::vector<Rect> &newObjects);
 	void setScreenBB(float width, float height);
 
-private:
-	std::vector<Rect> *objects = nullptr;
+private:	
+	std::vector<Rect>* objects = nullptr;
+
 	float boundingX = 0.0f;
 	float boundingY = 0.0f;
 

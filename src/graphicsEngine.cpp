@@ -13,7 +13,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-GraphicsEngine::GraphicsEngine(int width, int height, std::string) : width(width), height(height), title(title) {}
+GraphicsEngine::GraphicsEngine(uint32_t width, uint32_t height, std::string) : width(width), height(height), title(title) {}
 
 void GraphicsEngine::init() {
 	initWindow();
@@ -28,100 +28,92 @@ uint32_t GraphicsEngine::getHeight() {
 	return swapChainExtent.height;
 }
 
-bool GraphicsEngine::updateRectList(std::vector<Rect> &rects) {
+bool GraphicsEngine::addRects(std::vector<Rect> &rects) {
 	if (rects.size() == 0) {
 		std::cerr << "Tried to add empty vector of rects to engine" << std::endl;
 		return false;
 	}
 
-	bool init = rectCount == 0;
-		rectCount = 0;
-
-	// Temporarily allocate memory for model matrices in all materials which is reallocated to the correct size later
-	for (Material& material : materials) {
-		// Clear and reserve space for vertices and indices, resets count and free allocated memory
-		material.reset(rects.size());
-
-		material.modelMatrices = (glm::mat4*)malloc(sizeof(glm::mat4) * rects.size());
-	}
-
-	for (Rect& rect : rects) {
+	for (Rect &rect : rects) {
 		float width = rect.width;
 		float height = rect.height;
-		int textureIndex = rect.textureIndex;
 
-		Material& material = materials[textureIndex];
+		// Find correct material
+		Material *materialRef = nullptr;
+		for (Material &material : materials) {
+			if (rect.texture == material.texture) {
+				materialRef = &material;
+				break;
+			}
+		}
 
-		material.vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f }, {0.0f, 0.0f} });
-		material.vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f }, {1.0f, 0.0f} });
-		material.vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f }, {1.0f, 1.0f} });
-		material.vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f }, {0.0f, 1.0f} });
+		// Create the material if no material has the texture of the rect
+		if (!materialRef) {
+			createMaterial(rect.texture);
+			materialRef = &materials.back();
+		}
+
+		materialRef->vertices.push_back({ {0.0f , 0.0f  }, { 1.0f, 0.0f, 0.0f }, {0.0f, 0.0f} });
+		materialRef->vertices.push_back({ {width, 0.0f  }, { 1.0f, 0.0f, 0.0f }, {1.0f, 0.0f} });
+		materialRef->vertices.push_back({ {width, height}, { 1.0f, 0.0f, 0.0f }, {1.0f, 1.0f} });
+		materialRef->vertices.push_back({ {0.0f , height}, { 1.0f, 0.0f, 0.0f }, {0.0f, 1.0f} });
 
 
-		uint32_t vertexCount = (uint32_t)material.vertices.size() - 4;
-		material.indices.push_back(vertexCount);
-		material.indices.push_back(vertexCount + 1);
-		material.indices.push_back(vertexCount + 2);
-		material.indices.push_back(vertexCount + 2);
-		material.indices.push_back(vertexCount + 3);
-		material.indices.push_back(vertexCount);
+		uint32_t vertexCount = (uint32_t)materialRef->vertices.size() - 4;
+		materialRef->indices.push_back(vertexCount);
+		materialRef->indices.push_back(vertexCount + 1);
+		materialRef->indices.push_back(vertexCount + 2);
+		materialRef->indices.push_back(vertexCount + 2);
+		materialRef->indices.push_back(vertexCount + 3);
+		materialRef->indices.push_back(vertexCount);
 
-
-		material.modelMatrices[material.count] = glm::mat4(1.0f);
-		rect.modelMatrix = &material.modelMatrices[material.count];
-
-		material.count++;
-		rectCount++;
+		materialRef->newCount++;
+		materialRef->modelMatrices.push_back(rect.modelMatrix);
 	}
 
-
-	// Correcting the size of the model matrices memory
-	/*for (Material &mat : materials) {
-		void* tmpPtr = realloc(mat.modelMatrices, sizeof(glm::mat4) * mat.count);
-		if (tmpPtr) {
-			mat.modelMatrices = (glm::mat4*)tmpPtr;
-		}
-		else {
-			throw std::runtime_error("Failed to reallocate memory for model matrices");
-		}
-	}*/
-
-	createGameObjectData(init);
-
-	return true;
-}
-
-void GraphicsEngine::createGameObjectData(bool init) {
-	if (!init) {
+	// destroy descriptorpool and reset commandpool if they have already been initialized
+	if (rectCount > 0) {
 		// Wait for VkBuffers and command pool to stop pending
 		vkDeviceWaitIdle(device);
-
-		for (size_t i = 0; i < modelBuffers.size(); i++) {
-			vkUnmapMemory(device, modelBufferMemory[i]);
-			vkDestroyBuffer(device, modelBuffers[i], nullptr);
-			vkFreeMemory(device, modelBufferMemory[i], nullptr);
-		}
 
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
 		// Reset command pool much faster than free and reallocate command buffer and little faster than reset command buffer
 		vkResetCommandPool(device, commandPool, 0); //VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT??
+	}
 
-		for (Material& material : materials) {
-			vkDestroyBuffer(device, material.indexBuffer, nullptr);
-			vkFreeMemory(device, material.indexBufferMemory, nullptr);
+	// Create or recreate vertex and index buffer, and add model buffers only for materials with new rectangles
+	for (Material &material : materials) {
+		if (material.newCount > 0) {
+			if (material.count > 0) {
+				// Destroy old buffers
+				vkDestroyBuffer(device, material.vertexBuffer, nullptr);
+				vkFreeMemory(device, material.vertexBufferMemory, nullptr);
 
-			vkDestroyBuffer(device, material.vertexBuffer, nullptr);
-			vkFreeMemory(device, material.vertexBufferMemory, nullptr);
+				vkDestroyBuffer(device, material.indexBuffer, nullptr);
+				vkFreeMemory(device, material.indexBufferMemory, nullptr);
+			}
+
+			// Create new buffers
+			createVertexBuffer(material);
+			createIndexBuffer(material);
+
+			// Add model buffers
+			createModelUBOs(material);
+
+			material.count += material.newCount;
+			rectCount += material.newCount;
+			material.newCount = 0;
 		}
 	}
 
-	createVertexBuffer();
-	createIndexBuffer();
-	
-	setupDescriptors();
+	createDescriptorPool();
+	createDescriptorSets();
+	updateDescriptorSets();
 
 	recordCommandBuffer();
+
+	return true;
 }
 
 void GraphicsEngine::initWindow() {
@@ -166,7 +158,7 @@ void GraphicsEngine::initVulkan() {
 	createFramebuffers();
 	createCommandPool();
 
-	//getAlignments();
+	getDeviceInfo();
 
 	createCommandBuffer();
 
@@ -197,14 +189,11 @@ void GraphicsEngine::drawFrame() {
 	imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
 	// Update the model matrices of the objects
-	int offset = 0;
-	for (size_t i = 0; i < materials.size(); i++) {
-		for (size_t j = 0; j < materials[i].count; j++) {
-			memcpy(mappedDeviceMemPtrs[imageIndex * rectCount + offset + j], &materials[i].modelMatrices[j], sizeof(glm::mat4));
+	for (Material &material : materials) {
+		for (size_t i = 0; i < material.count; i++) {
+			memcpy(material.mappedDeviceMemPtrs[imageIndex][i], material.modelMatrices[i], sizeof(glm::mat4));
 		}
-		offset += materials[i].count;
 	}
-
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -280,17 +269,6 @@ void GraphicsEngine::cleanup() {
 
 	cleanupSwapChain();
 
-	for (size_t i = 0; i < modelBuffers.size(); i++) {
-		vkUnmapMemory(device, modelBufferMemory[i]);
-		vkDestroyBuffer(device, modelBuffers[i], nullptr);
-		vkFreeMemory(device, modelBufferMemory[i], nullptr);
-	}
-
-	for (size_t i = 0; i < textureImageViews.size(); i++) {
-		vkDestroyImageView(device, textureImageViews[i], nullptr);
-		vkDestroyImage(device, textureImages[i], nullptr);
-	}
-
 	vkFreeMemory(device, textureImageMemory, nullptr);
 	vkDestroySampler(device, textureSampler, nullptr);
 
@@ -308,12 +286,23 @@ void GraphicsEngine::cleanup() {
 	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 	vkDestroyCommandPool(device, commandPool, nullptr);
 
-	for (Material const &material : materials) {
+	for (Material &material : materials) {
 		vkDestroyBuffer(device, material.indexBuffer, nullptr);
 		vkFreeMemory(device, material.indexBufferMemory, nullptr);
 
 		vkDestroyBuffer(device, material.vertexBuffer, nullptr);
 		vkFreeMemory(device, material.vertexBufferMemory, nullptr);
+
+		for (size_t i = 0; i < material.modelBuffers.size(); i ++) {
+			for (size_t j = 0; j < material.modelBuffers[i].size(); j++) {
+				vkUnmapMemory(device, material.modelBufferMemory[i][j]);
+				vkDestroyBuffer(device, material.modelBuffers[i][j], nullptr);
+				vkFreeMemory(device, material.modelBufferMemory[i][j], nullptr);
+			}
+		}
+
+		vkDestroyImageView(device, material.textureImageView, nullptr);
+		vkDestroyImage(device, material.textureImage, nullptr);
 	}
 
 
@@ -1106,7 +1095,9 @@ void GraphicsEngine::createCommandPool() {
 	}
 }
 
-void GraphicsEngine::createTextureImage(std::string fileName) {
+void GraphicsEngine::createMaterial(std::string fileName) {
+	Material material(swapChainImages.size(), fileName);
+
 	// Load texture image
 	int textureWidth, textureHeight, textureChannels;
 	stbi_uc* pixels = stbi_load(
@@ -1133,25 +1124,23 @@ void GraphicsEngine::createTextureImage(std::string fileName) {
 	vkUnmapMemory(device, stagingBufferMemory);
 	stbi_image_free(pixels);
 
-	textureImages.push_back(VkImage());
 	// Using image objects instead of accessing buffer directly from shader
 	createImage(
 		textureWidth, textureHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImages.back(), textureImageMemory
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, material.textureImage, textureImageMemory
 	);
 
-	transitionImageLayout(textureImages.back(), VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	copyBufferToImage(stagingBuffer, textureImages.back(), static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight));
-	transitionImageLayout(textureImages.back(), VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	transitionImageLayout(material.textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	copyBufferToImage(stagingBuffer, material.textureImage, static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight));
+	transitionImageLayout(material.textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	
 	vkDestroyBuffer(device, stagingBuffer, nullptr);
 	vkFreeMemory(device, stagingBufferMemory, nullptr);
 
-	VkImageView textureImageView = createImageView(textureImages.back(), VK_FORMAT_R8G8B8A8_SRGB);
+	material.textureImageView = createImageView(material.textureImage, VK_FORMAT_R8G8B8A8_SRGB);
 	
-	textureImageViews.push_back(textureImageView);
-	materials.push_back(Material());
+	materials.push_back(material);
 }
 
 void GraphicsEngine::createImage(
@@ -1285,100 +1274,67 @@ void GraphicsEngine::createTextureSampler() {
 	}
 }
 
-void GraphicsEngine::createVertexBuffer() {
-	for (Material &material : materials) {
-		if (material.count == 0) break;
+void GraphicsEngine::createVertexBuffer(Material &material) {
+	VkDeviceSize bufferSize = sizeof(Vertex) * material.vertices.size();
 
-		VkDeviceSize bufferSize = sizeof(Vertex) * material.vertices.size();
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMemory;
+	createBuffer(
+		bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		stagingBuffer, stagingBufferMemory
+	);
 
-		VkBuffer stagingBuffer;
-		VkDeviceMemory stagingBufferMemory;
-		createBuffer(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			stagingBuffer, stagingBufferMemory
-		);
+	void* data;
+	vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	memcpy(data, material.vertices.data(), (size_t)bufferSize);
+	vkUnmapMemory(device, stagingBufferMemory);
 
-		void* data;
-		vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-		memcpy(data, material.vertices.data(), (size_t)bufferSize);
-		vkUnmapMemory(device, stagingBufferMemory);
+	createBuffer(
+		bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, material.vertexBuffer, material.vertexBufferMemory
+	);
 
-		createBuffer(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, material.vertexBuffer, material.vertexBufferMemory
-		);
+	copyBuffer(stagingBuffer, material.vertexBuffer, bufferSize);
 
-		copyBuffer(stagingBuffer, material.vertexBuffer, bufferSize);
-
-		vkDestroyBuffer(device, stagingBuffer, nullptr);
-		vkFreeMemory(device, stagingBufferMemory, nullptr);
-	}
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void GraphicsEngine::createIndexBuffer() {
-	for (Material &material : materials) {
-		if (material.count == 0) break;
+void GraphicsEngine::createIndexBuffer(Material &material) {
+	VkDeviceSize bufferSize = sizeof(uint32_t) * material.indices.size();
 
-		VkDeviceSize bufferSize = sizeof(uint32_t) * material.indices.size();
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMemory;
+	createBuffer(
+		bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		stagingBuffer, stagingBufferMemory
+	);
 
-		VkBuffer stagingBuffer;
-		VkDeviceMemory stagingBufferMemory;
-		createBuffer(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			stagingBuffer, stagingBufferMemory
-		);
+	void* data;
+	vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	memcpy(data, material.indices.data(), (size_t)bufferSize);
+	vkUnmapMemory(device, stagingBufferMemory);
 
-		void* data;
-		vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-		memcpy(data, material.indices.data(), (size_t)bufferSize);
-		vkUnmapMemory(device, stagingBufferMemory);
+	createBuffer(
+		bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, material.indexBuffer, material.indexBufferMemory
+	);
 
-		createBuffer(
-			bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, material.indexBuffer, material.indexBufferMemory
-		);
+	copyBuffer(stagingBuffer, material.indexBuffer, bufferSize);
 
-		copyBuffer(stagingBuffer, material.indexBuffer, bufferSize);
-
-		vkDestroyBuffer(device, stagingBuffer, nullptr);
-		vkFreeMemory(device, stagingBufferMemory, nullptr);
-	}
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void GraphicsEngine::getAlignments() {
+void GraphicsEngine::getDeviceInfo() {
 	VkPhysicalDeviceProperties props{};
 	vkGetPhysicalDeviceProperties(physicalDevice, &props);
 
-	/*std::cout << "Max dynamic ubos " << props.limits.maxDescriptorSetUniformBuffersDynamic << std::endl;
-	std::cout << "Max dynamic ubo size " << props.limits.maxUniformBufferRange << std::endl;
-	std::cout << "Min ubo alignment " << props.limits.minUniformBufferOffsetAlignment << "\n" << std::endl;
-
-	std::cout << "Max storage buffer " << props.limits.maxDescriptorSetStorageBuffersDynamic << std::endl;
-	std::cout << "Max storage buffer size " << props.limits.maxStorageBufferRange << std::endl;
-	std::cout << "Storage buffer alignment " << props.limits.minStorageBufferOffsetAlignment << "\n" << std::endl;
-
-	std::cout << "Max memory allocation count " << props.limits.maxMemoryAllocationCount << std::endl;
-	std::cout << "Max pushconstant size " << props.limits.maxPushConstantsSize << std::endl;*/
-
-	
-	
-	/*size_t alignment = sizeof(glm::mat4);
-	if (shaderBufferType == ShaderBufferType::SSBO) {
-		size_t minSboAlignment = props.limits.minStorageBufferOffsetAlignment;
-		shaderBufferAlignment = (alignment + minSboAlignment - 1) & ~(minSboAlignment - 1);
-	}
-	else if (shaderBufferType == ShaderBufferType::UBO) {
-		size_t minUboAlignment = props.limits.minUniformBufferOffsetAlignment;
-		shaderBufferAlignment = (alignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
-	}
-	else {
-		throw std::runtime_error("Uknown shaderBufferType used");
-	}*/
-
-	size_t sboSize = props.limits.maxStorageBufferRange;
-	//std::cout << "Max amount of objects in storage buffer " << sboSize / shaderBufferAlignment << std::endl;
+	std::cout << "Device name: " << props.deviceName << "\n";
+	std::cout << "Max memory allocation count: " << props.limits.maxMemoryAllocationCount << "\n";
+	std::cout << "Max descriptor set count: " << props.limits.maxDescriptorSetUniformBuffers << "\n";
 }
 
 void GraphicsEngine::createProjViewUBO() {
@@ -1401,22 +1357,28 @@ void GraphicsEngine::createProjViewUBO() {
 	}
 }
 
-void GraphicsEngine::createModelUBOs() {
+void GraphicsEngine::createModelUBOs(Material &material) {
 	VkDeviceSize bufferSize = sizeof(glm::mat4);
 
-	modelBuffers.resize(swapChainImages.size() * rectCount);
-	modelBufferMemory.resize(swapChainImages.size() * rectCount);
-	mappedDeviceMemPtrs.resize(swapChainImages.size() * rectCount);
+	// For each swapChainImage
+	for (size_t i = 0; i < material.modelBuffers.size(); i++) {
+		// Pre-allocate space
+		material.modelBuffers[i].reserve(material.count + material.newCount);
+		material.modelBufferMemory[i].reserve(material.count + material.newCount);
+		material.mappedDeviceMemPtrs[i].reserve(material.count + material.newCount);
 
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		for (size_t j = 0; j < rectCount; j++) {
+		for (size_t j = 0; j < material.newCount; j++) {
+			material.modelBuffers[i].push_back(VkBuffer());
+			material.modelBufferMemory[i].push_back(VkDeviceMemory());
+			material.mappedDeviceMemPtrs[i].push_back(nullptr);
+
 			createBuffer(
 				bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-				modelBuffers[i * rectCount + j], modelBufferMemory[i * rectCount + j]
+				material.modelBuffers[i].back(), material.modelBufferMemory[i].back()
 			);
 
-			vkMapMemory(device, modelBufferMemory[i * rectCount + j], 0, bufferSize, 0, &mappedDeviceMemPtrs[i * rectCount + j]);
+			vkMapMemory(device, material.modelBufferMemory[i].back(), 0, bufferSize, 0, &material.mappedDeviceMemPtrs[i].back());
 		}
 	}
 }
@@ -1524,7 +1486,7 @@ void GraphicsEngine::createDescriptorPool() {
 }
 
 void GraphicsEngine::createDescriptorSets() {
-	descriptorSets.resize(1 + swapChainImages.size() * 2);
+	cameraDescriptorSets.resize(swapChainImages.size());
 
 	// Scene
 	std::vector<VkDescriptorSetLayout> sceneLayouts(swapChainImages.size(), descriptorSetLayout[0]);
@@ -1535,44 +1497,42 @@ void GraphicsEngine::createDescriptorSets() {
 	sceneAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
 	sceneAllocInfo.pSetLayouts = sceneLayouts.data();
 
-	descriptorSets[0].resize(swapChainImages.size());
-	if (vkAllocateDescriptorSets(device, &sceneAllocInfo, descriptorSets[0].data()) != VK_SUCCESS) {
+	if (vkAllocateDescriptorSets(device, &sceneAllocInfo, cameraDescriptorSets.data()) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to allocate descriptor sets");
 	}
 
 
 	// Material
-	std::vector<VkDescriptorSetLayout> materialLayouts(materials.size(), descriptorSetLayout[1]);
+	std::vector<VkDescriptorSetLayout> materialLayouts(swapChainImages.size(), descriptorSetLayout[1]);
 
 	VkDescriptorSetAllocateInfo materialAllocInfo{};
 	materialAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	materialAllocInfo.descriptorPool = descriptorPool;
-	materialAllocInfo.descriptorSetCount = static_cast<uint32_t>(materials.size());
+	materialAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
 	materialAllocInfo.pSetLayouts = materialLayouts.data();
 
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		descriptorSets[1 + i].resize(materials.size());
-
-		if (vkAllocateDescriptorSets(device, &materialAllocInfo, descriptorSets[1 + i].data()) != VK_SUCCESS) {
+	for (Material &material : materials) {		
+		if (vkAllocateDescriptorSets(device, &materialAllocInfo, material.materialDescriptorSets.data()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate descriptor sets");
 		}
 	}
 
-
 	// Object
-	std::vector<VkDescriptorSetLayout> objectLayouts(rectCount, descriptorSetLayout[2]);
+	for (Material &material : materials) {
+		std::vector<VkDescriptorSetLayout> objectLayouts(material.count, descriptorSetLayout[2]);
 
-	VkDescriptorSetAllocateInfo objectAllocInfo{};
-	objectAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	objectAllocInfo.descriptorPool = descriptorPool;
-	objectAllocInfo.descriptorSetCount = static_cast<uint32_t>(rectCount);
-	objectAllocInfo.pSetLayouts = objectLayouts.data();
+		VkDescriptorSetAllocateInfo objectAllocInfo{};
+		objectAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		objectAllocInfo.descriptorPool = descriptorPool;
+		objectAllocInfo.descriptorSetCount = static_cast<uint32_t>(material.count);
+		objectAllocInfo.pSetLayouts = objectLayouts.data();
 
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		descriptorSets[1 + swapChainImages.size() + i].resize(rectCount);
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
+			material.objectDescriptorSets[i].resize(material.count);
 
-		if (vkAllocateDescriptorSets(device, &objectAllocInfo, descriptorSets[1 + swapChainImages.size() + i].data()) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate descriptor sets");
+			if (vkAllocateDescriptorSets(device, &objectAllocInfo, material.objectDescriptorSets[i].data()) != VK_SUCCESS) {
+				throw std::runtime_error("Failed to allocate descriptor sets");
+			}
 		}
 	}
 }
@@ -1590,7 +1550,7 @@ void GraphicsEngine::updateDescriptorSets() {
 		// Uniform buffer for the projection & view matrix
 		VkWriteDescriptorSet bufferDescriptorWrite{};
 		bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		bufferDescriptorWrite.dstSet = descriptorSets[0][i];
+		bufferDescriptorWrite.dstSet = cameraDescriptorSets[i];
 		bufferDescriptorWrite.dstBinding = 0;
 		bufferDescriptorWrite.dstArrayElement = 0;
 		bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1605,7 +1565,7 @@ void GraphicsEngine::updateDescriptorSets() {
 
 		VkWriteDescriptorSet samplerDescriptorWrite{};
 		samplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		samplerDescriptorWrite.dstSet = descriptorSets[0][i];
+		samplerDescriptorWrite.dstSet = cameraDescriptorSets[i];
 		samplerDescriptorWrite.dstBinding = 1;
 		samplerDescriptorWrite.dstArrayElement = 0;
 		samplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
@@ -1619,54 +1579,57 @@ void GraphicsEngine::updateDescriptorSets() {
 
 
 	// Material
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		for (size_t j = 0; j < materials.size(); j++) {
+	for (Material &material : materials) {
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
 			std::vector<VkWriteDescriptorSet> writes;
 
 			// Sampled image
 			VkDescriptorImageInfo imageInfo{};
 			imageInfo.sampler = nullptr;
-			imageInfo.imageView = textureImageViews[j];
+			imageInfo.imageView = material.textureImageView;
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 			VkWriteDescriptorSet imagesDescriptorWrite{};
 			imagesDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			imagesDescriptorWrite.dstSet = descriptorSets[1 + i][j];
+			imagesDescriptorWrite.dstSet = material.materialDescriptorSets[i];
 			imagesDescriptorWrite.dstBinding = 0;
 			imagesDescriptorWrite.dstArrayElement = 0;
 			imagesDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 			imagesDescriptorWrite.descriptorCount = 1;
 			imagesDescriptorWrite.pImageInfo = &imageInfo;
 
-			writes.push_back(imagesDescriptorWrite);			
+			writes.push_back(imagesDescriptorWrite);
 
 			vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 		}
 	}
+	
 
 	// Object
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		for (size_t j = 0; j < rectCount; j++) {
-			std::vector<VkWriteDescriptorSet> writes;
+	for (Material &material : materials) {
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
+			for (size_t j = 0; j < material.count; j++) {
+				std::vector<VkWriteDescriptorSet> writes;
 
-			// Uniform buffer for model matrix
-			VkDescriptorBufferInfo bufferInfo{};
-			bufferInfo.buffer = modelBuffers[i * rectCount + j];
-			bufferInfo.offset = 0;
-			bufferInfo.range = sizeof(glm::mat4);
+				// Uniform buffer for model matrix
+				VkDescriptorBufferInfo bufferInfo{};
+				bufferInfo.buffer = material.modelBuffers[i][j];
+				bufferInfo.offset = 0;
+				bufferInfo.range = sizeof(glm::mat4);
 
-			VkWriteDescriptorSet bufferDescriptorWrite{};
-			bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			bufferDescriptorWrite.dstSet = descriptorSets[1 + swapChainImages.size() + i][j];
-			bufferDescriptorWrite.dstBinding = 0;
-			bufferDescriptorWrite.dstArrayElement = 0;
-			bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			bufferDescriptorWrite.descriptorCount = 1;
-			bufferDescriptorWrite.pBufferInfo = &bufferInfo;
+				VkWriteDescriptorSet bufferDescriptorWrite{};
+				bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				bufferDescriptorWrite.dstSet = material.objectDescriptorSets[i][j];
+				bufferDescriptorWrite.dstBinding = 0;
+				bufferDescriptorWrite.dstArrayElement = 0;
+				bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				bufferDescriptorWrite.descriptorCount = 1;
+				bufferDescriptorWrite.pBufferInfo = &bufferInfo;
 
-			writes.push_back(bufferDescriptorWrite);
+				writes.push_back(bufferDescriptorWrite);
 
-			vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+				vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+			}
 		}
 	}	
 }
@@ -1713,34 +1676,31 @@ void GraphicsEngine::recordCommandBuffer() {
 		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
 		// Bind the projection & view matrix
-		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[0][1], 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &cameraDescriptorSets[i], 0, nullptr);
 
-		if (rectCount > 0) {
-			int rectIndex = 0;
+		// For each material
+		for (Material &material : materials) {
+			if (material.count == 0) break;
 
-			// For each material
-			for (size_t j = 0; j < materials.size(); j++) {
-				if (materials[j].count == 0) break;
+			VkBuffer vertexBuffers[] = { material.vertexBuffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-				VkBuffer vertexBuffers[] = { materials[j].vertexBuffer };
-				VkDeviceSize offsets[] = { 0 };
-				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+			vkCmdBindIndexBuffer(commandBuffers[i], material.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-				vkCmdBindIndexBuffer(commandBuffers[i], materials[j].indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+			// Bind material descriptor set
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &material.materialDescriptorSets[i], 0, nullptr);
 
-				// Bind material descriptor set
-				vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &descriptorSets[1 + i][j], 0, nullptr);
+			// For each object
+			for (size_t h = 0; h < material.count; h++) {
+				// Bind the model matrix
+				vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &material.objectDescriptorSets[i][h], 0, nullptr);
 
-				// For each object
-				for (size_t h = 0; h < materials[j].count; h++) {
-					// Bind the model matrix
-					vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &descriptorSets[1 + swapChainImages.size() + i][rectIndex++], 0, nullptr);
-
-					// Draw one rect
-					vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(h * 6), 0, 0);
-				}
+				// Draw one rect
+				vkCmdDrawIndexed(commandBuffers[i], 6, 1, static_cast<uint32_t>(h * 6), 0, 0);
 			}
 		}
+		
 
 		vkCmdEndRenderPass(commandBuffers[i]);
 
@@ -1820,11 +1780,4 @@ uint32_t GraphicsEngine::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFla
 
 void GraphicsEngine::setMouseCallback(GLFWmousebuttonfun fun) {
 	glfwSetMouseButtonCallback(window, fun);
-}
-
-void GraphicsEngine::setupDescriptors() {
-	createModelUBOs();
-	createDescriptorPool();
-	createDescriptorSets();
-	updateDescriptorSets();
 }
