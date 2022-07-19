@@ -14,6 +14,7 @@
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{F0F4D430-6158-4029-BAB9-5DAD26404B95}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -41,13 +42,13 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\stb\;E:\VulkanSDK\1.2.135.0\Include;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\glm;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <WarningLevel>Level4</WarningLevel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>E:\VulkanSDK\1.2.135.0\Lib;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\lib-vc2019</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>E:\VulkanSDK\1.3.216.0\Lib;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\lib-vc2019</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
     </Link>
@@ -55,29 +56,25 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\stb\;E:\VulkanSDK\1.2.135.0\Include;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\glm;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WarningLevel>Level4</WarningLevel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>E:\VulkanSDK\1.2.135.0\Lib;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\lib-vc2019</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>E:\VulkanSDK\1.3.216.0\Lib;C:\Users\Hilding\Documents\Visual Studio 2019\Libraries\GLFW\lib-vc2019</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\gameObjects.cpp" />
+    <ClCompile Include="src\GameEngine.cpp" />
     <ClCompile Include="src\graphicsEngine.cpp" />
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\physicsSystem.cpp" />
-    <ClCompile Include="src\shapes.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\gameObjects.h" />
     <ClInclude Include="src\graphicsEngine.h" />
-    <ClInclude Include="src\physicsSystem.h" />
-    <ClInclude Include="src\shapes.h" />
+    <ClInclude Include="src\GameEngine.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

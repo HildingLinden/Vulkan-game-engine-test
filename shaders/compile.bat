@@ -1,3 +1,5 @@
-E:\VulkanSDK\1.2.135.0\Bin\glslc.exe shader.vert -O -o vert.spv
-E:\VulkanSDK\1.2.135.0\Bin\glslc.exe shader.frag -O -o frag.spv
+set "var=shader"
+set /p "var=[%var%] "
+E:\VulkanSDK\1.3.216.0\Bin\glslc.exe %var%.vert -O -o %var%Vert.spv
+E:\VulkanSDK\1.3.216.0\Bin\glslc.exe %var%.frag -O -o %var%Frag.spv
 pause

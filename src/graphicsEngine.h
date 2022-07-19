@@ -3,9 +3,10 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#define GLM_FORCE_RADIANS
 //#define GLM_FORCE_AVX2
-#include <glm/vec3.hpp>
+#include <glm\vec2.hpp>
+#include <glm\vec3.hpp>
+#include <glm\mat4x4.hpp>
 
 #include <vector>
 #include <cstring>
@@ -15,8 +16,11 @@
 #include <array>
 #include <string>
 
-#include "shapes.h"
+/*
+* Debug methods
+*/
 
+// Load the address of the vkCreateDebugUtilsMessengerEXT extension function
 static VkResult CreateDebugUtilsMessengerEXT(
 	VkInstance instance,
 	const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -43,11 +47,14 @@ static void DestroyDebugUtilsMessengerEXT(
 	}
 }
 
+/*
+* Structs
+*/
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
 	std::optional<uint32_t> presentFamily;
 
-	bool hasValue() {
+	bool hasAllValues() {
 		return graphicsFamily.has_value() && presentFamily.has_value();
 	}
 };
@@ -59,7 +66,7 @@ struct SwapChainSupportDetails {
 };
 
 struct Vertex {
-	glm::vec2 pos;
+	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 texCoord;
 
@@ -67,7 +74,7 @@ struct Vertex {
 		VkVertexInputBindingDescription bindingDescription{};
 		bindingDescription.binding = 0;
 		bindingDescription.stride = sizeof(Vertex);
-		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // VK_VERTEX_INPUT_RATE_INSTANCE, for each instance instead of vertex
 
 		return bindingDescription;
 	}
@@ -76,7 +83,7 @@ struct Vertex {
 		std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
 		attributeDescriptions[0].binding = 0;
 		attributeDescriptions[0].location = 0; // Layout in shader
-		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
 		attributeDescriptions[1].binding = 0;
@@ -94,64 +101,48 @@ struct Vertex {
 };
 
 struct UniformBufferObject {
-	glm::mat4 matrix;
-};
-
-struct Material {
-	size_t count = 0;
-	size_t newCount = 0;
-
-	std::vector<Vertex> vertices;
-	VkBuffer vertexBuffer = VkBuffer();
-	VkDeviceMemory vertexBufferMemory = VkDeviceMemory();
-
-	std::vector<uint32_t> indices;
-	VkBuffer indexBuffer = VkBuffer();
-	VkDeviceMemory indexBufferMemory = VkDeviceMemory();
-
-	std::vector<std::vector<VkBuffer>> modelBuffers;
-	std::vector<std::vector<VkDeviceMemory>> modelBufferMemory;
-	std::vector<std::vector<void*>> mappedDeviceMemPtrs;
-
-	std::vector<glm::mat4 *> modelMatrices;
-
-	std::vector<std::vector<VkDescriptorSet>> objectDescriptorSets;
-	std::vector<VkDescriptorSet> materialDescriptorSets;
-
-	VkImage textureImage = VkImage();
-	VkImageView textureImageView = VkImageView();
-
-	std::string texture;
-
-	Material(size_t swapChainImageSize, std::string texture) : texture(texture) {
-		modelBuffers.resize(swapChainImageSize);
-		modelBufferMemory.resize(swapChainImageSize);
-		mappedDeviceMemPtrs.resize(swapChainImageSize);
-
-		materialDescriptorSets.resize(swapChainImageSize);
-		objectDescriptorSets.resize(swapChainImageSize);
-	}
+	alignas(16) glm::mat4 model;
+	alignas(16) glm::mat4 view;
+	alignas(16) glm::mat4 proj;
 };
 
 class GraphicsEngine {
 public:
-	GraphicsEngine(uint32_t width, uint32_t height, std::string title);
-	bool addRects(std::vector<Rect> &rects);
-	void init();
+	enum class PresentationMode {
+		vsync = VK_PRESENT_MODE_FIFO_KHR,
+		triple = VK_PRESENT_MODE_MAILBOX_KHR,
+		fast = VK_PRESENT_MODE_IMMEDIATE_KHR
+	};
+
+	void initVulkan(std::string applicationName, PresentationMode preferedPresentationMode);
 	void drawFrame();
 	void cleanup();
-	bool shouldClose();
-	void changeTitle(std::string fpsString);
-	void pollEvents();
-	void setMouseCallback(GLFWmousebuttonfun fun);
-	bool checkMouseClick();
-	bool checkKeyPress(int key);
-	void createMaterial(std::string fileName);
-	uint32_t getWidth();
-	uint32_t getHeight();
 	size_t rectCount = 0;
+	bool framebufferResized = false;
+
+	GLFWwindow *window;
 
 private:
+	const std::vector<Vertex> vertices = {
+		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+		{{ 0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+		{{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+		{{-0.5f,  0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+		{{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+		{{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+		{{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+	};
+	const std::vector<uint16_t> indices = {
+		0,1,2,2,3,0,
+		4,5,6,6,7,4
+	};
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
+	VkBuffer indexBuffer;
+	VkDeviceMemory indexBufferMemory;
+
 	const int MAX_FRAMES_IN_FLIGHT = 2;
 
 	const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -163,74 +154,64 @@ private:
 #else
 	const bool enableValidationLayers = false;
 #endif
-	std::string title;
-
-	uint32_t width;
-	uint32_t height;
-
-	GLFWwindow *window;
-
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
+	
+	// Window
 	VkSurfaceKHR surface;
 
+	// Physical & logical device
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device;
 
+	// Queues
+	QueueFamilyIndices queueFamilyIndices;
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 
+	// Swapchain
+	PresentationMode preferedPresentationMode;
 	VkSwapchainKHR swapChain;
 	std::vector<VkImage> swapChainImages;
 	std::vector<VkImageView> swapChainImageViews;
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 
+	// Render pass, descriptor layout & pipeline
 	VkRenderPass renderPass;
-	std::vector<VkDescriptorSetLayout> descriptorSetLayout;
+	VkDescriptorSetLayout descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
+	// Framebuffers
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 
+	// Command pool & buffers
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	// Texture, sampler & depth buffer
+	VkImage textureImage;
+	VkImageView textureImageView;
+	VkDeviceMemory textureImageMemory;
+	VkSampler textureSampler;
+	VkImage depthImage;
+	VkDeviceMemory depthImageMemory;
+	VkImageView depthImageView;
+
+	// Sync objects
 	std::vector<VkSemaphore> imageAvailableSemaphores;
 	std::vector<VkSemaphore> renderFinishedSemaphores;
 	std::vector<VkFence> inFlightFences;
-	std::vector<VkFence> imagesInFlight;
-	size_t currentFrame = 0;
+	uint32_t currentFrame = 0;
 
-	std::chrono::time_point<std::chrono::high_resolution_clock> start;
-	std::chrono::time_point<std::chrono::high_resolution_clock> finish;
-
-	bool frameBufferResized = false;
-
-	std::vector<Material> materials;
-
-	VkDeviceMemory textureImageMemory;	
-
-	VkSampler textureSampler;
-
-	UniformBufferObject UBO{};
-
-	size_t shaderBufferAlignment;
-
-	std::vector<VkBuffer> projViewBuffers;
-	std::vector<VkDeviceMemory> projViewBufferMemory;
+	std::vector<VkBuffer> uniformBuffers;
+	std::vector<VkDeviceMemory> uniformBufferMemory;
 
 	VkDescriptorPool descriptorPool;
-	std::vector<VkDescriptorSet> cameraDescriptorSets;
+	std::vector<VkDescriptorSet> descriptorSets;
 
-	std::vector<bool> shaderBufferNeedsUpdate;
-
-	const size_t SHADER_BUFFER_MAX_OBJECT_COUNT = 3000; //~4096 for L2, ~32768 for L3, 256 for UBO
-
-	void initWindow();
-	void initVulkan();
-
-	void createInstance();
+	void createInstance(std::string applicationName);
 	bool checkValidationLayerSupport();
 	std::vector<const char*> getRequiredExtensions();
 	void setupDebugMessenger();
@@ -248,10 +229,10 @@ private:
 	void createSwapChain();
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, PresentationMode preferedPresentMode);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR & capabilites);
 	void createImageViews();
-	VkImageView createImageView(VkImage image, VkFormat format);
+	VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 	void createRenderPass();
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
@@ -260,16 +241,22 @@ private:
 	void createFramebuffers();
 	void createCommandPool();
 
+	void createMaterial(std::string fileName);
+	void createDepthResources();
+	VkFormat findDepthFormat();
+	VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	bool hasStencilComponent(VkFormat format);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+	void createTextureImageView();
 	void createTextureSampler();
 
-	void createVertexBuffer(Material &material);
-	void createIndexBuffer(Material &material);
+	void createVertexBuffer();
+	void createIndexBuffer();
 	void getDeviceInfo();
-	void createProjViewUBO();
-	void createModelUBOs(Material &material);
+	void createUBO();
+	void updateUBO(uint32_t currentImage);
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	VkCommandBuffer beginSingleTimeCommands();
@@ -280,12 +267,11 @@ private:
 	void updateDescriptorSets();
 
 	void createCommandBuffer();
-	void recordCommandBuffer();
+	void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 	void createSyncObjects();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-	static void framebufferResizeCallback(GLFWwindow * window, int width, int height);
 	void recreateSwapChain();
 	
 	void cleanupSwapChain();
