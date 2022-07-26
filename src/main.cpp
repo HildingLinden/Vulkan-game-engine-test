@@ -11,9 +11,11 @@ int main() {
 		engine.run();
 
 		engine.cleanup();
+		//std::cin.get();
 	}
 	catch (std::exception e) {
 		std::cerr << e.what() << std::endl;
+		std::cin.get();
 		exit(1);
 	}
 

@@ -1,10 +1,21 @@
 # TODO
 ## Features
-- Multisampling
-- Mipmaps
 - Shadow maps
-- Loading models
-- Multithreading
+- Cascaded shadow maps
+- Multithreading- / command buffer generation
+- Instanced rendering - Indirect drawing
+- Dynamic uniforms
+- Separate images and sampler descriptors
+- Pipeline cache
+- Push constants
+- Rat tracing
+- Multiple subpasses
+- Occlusion querying
+- Pipeline statistics
+- PBR
+- Deferred rendering
+- Cull and LOD on GPU
+
 ## Misc improvements
 - Fix stack trashed after resizing and closing window
 - Add GPU performance timing with TimeStamp/performance query
@@ -23,3 +34,5 @@
 - Query for device limits for anisotropicFiltering and others and save to global for using in createSampler
 - Create depthBufferImage for each image in flight?
 - Add Vulkan raii or Vulkan unique handles
+- Switch to SDL2?
+- Test difference between storeOp store & don care on color attachment and depth attachment (with VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)

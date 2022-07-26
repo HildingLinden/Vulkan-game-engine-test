@@ -4,6 +4,8 @@
 #include <GLFW/glfw3.h>
 
 //#define GLM_FORCE_AVX2
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 #include <glm\vec2.hpp>
 #include <glm\vec3.hpp>
 #include <glm\mat4x4.hpp>
@@ -98,7 +100,22 @@ struct Vertex {
 
 		return attributeDescriptions;
 	}
+
+	bool operator==(const Vertex &other) const {
+		return pos == other.pos && color == other.color && texCoord == other.texCoord;
+	}
 };
+
+// Hashfunction for Vertex
+namespace std {
+	template<> struct hash<Vertex> {
+		size_t operator()(Vertex const &vertex) const {
+			return  ((hash<glm::vec3>()(vertex.pos) ^
+					(hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+					(hash<glm::vec2>()(vertex.texCoord) << 1);
+		}
+	};
+}
 
 struct UniformBufferObject {
 	alignas(16) glm::mat4 model;
@@ -115,29 +132,46 @@ public:
 	};
 
 	void initVulkan(std::string applicationName, PresentationMode preferedPresentationMode);
-	void drawFrame();
+	double drawFrame();
 	void cleanup();
-	size_t rectCount = 0;
+
+	void rotateCamera(double x, double y);
+	void zoomCamera(double zoom);
+	
+	GLFWwindow *window;
 	bool framebufferResized = false;
 
-	GLFWwindow *window;
-
 private:
-	const std::vector<Vertex> vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{ 0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f,  0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+	double zoom = 0.0;
+	UniformBufferObject UBO{};
 
-		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-	};
-	const std::vector<uint16_t> indices = {
-		0,1,2,2,3,0,
-		4,5,6,6,7,4
-	};
+	const std::string MODEL_PATH = "models/statue.obj";
+	const std::string TEXTURE_PATH = "textures/statue.png";
+	const bool ssaoEnabled = true;
+
+	std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+
+	std::vector<Vertex> vertices;;
+	std::vector<uint32_t> indices;
+
+	// Hardcoded vertices and indices for debugging
+	//std::vector<Vertex> vertices = {
+	//{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	//{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	//{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	//{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+	//{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	//{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	//{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	//{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
+	//};
+
+	//std::vector<uint32_t> indices = {
+	//0, 1, 2, 2, 3, 0,
+	//4, 5, 6, 6, 7, 4
+	//};
+
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
 	VkBuffer indexBuffer;
@@ -191,6 +225,7 @@ private:
 	std::vector<VkCommandBuffer> commandBuffers;
 
 	// Texture, sampler & depth buffer
+	uint32_t mipLevels;
 	VkImage textureImage;
 	VkImageView textureImageView;
 	VkDeviceMemory textureImageMemory;
@@ -210,6 +245,11 @@ private:
 
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
+
+	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	VkImage colorImage;
+	VkDeviceMemory colorImageMemory;
+	VkImageView colorImageView;
 
 	void createInstance(std::string applicationName);
 	bool checkValidationLayerSupport();
@@ -232,7 +272,7 @@ private:
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes, PresentationMode preferedPresentMode);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR & capabilites);
 	void createImageViews();
-	VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+	VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 	void createRenderPass();
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
@@ -241,22 +281,24 @@ private:
 	void createFramebuffers();
 	void createCommandPool();
 
-	void createMaterial(std::string fileName);
+	void createTextureImage();
+	void createMipMap(VkImage image, VkFormat imageFormat, uint32_t textureWidth, uint32_t textureHeight, uint32_t mipLevels);
 	void createDepthResources();
 	VkFormat findDepthFormat();
 	VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
-	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory, uint32_t mipLevels, VkSampleCountFlagBits numSamples);
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
 	bool hasStencilComponent(VkFormat format);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 	void createTextureImageView();
 	void createTextureSampler();
 
+	void loadModel();
 	void createVertexBuffer();
 	void createIndexBuffer();
 	void getDeviceInfo();
 	void createUBO();
-	void updateUBO(uint32_t currentImage);
+	void updateUBO(uint32_t currentImage, double time);
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer & buffer, VkDeviceMemory & bufferMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	VkCommandBuffer beginSingleTimeCommands();
@@ -275,4 +317,7 @@ private:
 	void recreateSwapChain();
 	
 	void cleanupSwapChain();
+
+	VkSampleCountFlagBits getMaxUsableSampleCount();
+	void createColorResources();
 };

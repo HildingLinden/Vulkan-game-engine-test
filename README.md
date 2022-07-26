@@ -12,3 +12,5 @@ The base Vulkan tutorial: [https://vulkan-tutorial.com](https://vulkan-tutorial.
 Vulkan guide more centered around game engine design: [https://vkguide.dev/](https://vkguide.dev/)  
 NVidia tips: [https://developer.nvidia.com/blog/vulkan-dos-donts/](https://developer.nvidia.com/blog/vulkan-dos-donts/)  
 Efficiency tips: [https://zeux.io/2020/02/27/writing-an-efficient-vulkan-renderer/](https://zeux.io/2020/02/27/writing-an-efficient-vulkan-renderer/)  
+Vulkan Examples & demos: [https://github.com/SaschaWillems/Vulkan](https://github.com/SaschaWillems/Vulkan)  
+Official Vulkan samples with explanations: [https://github.com/KhronosGroup/Vulkan-Samples](https://github.com/KhronosGroup/Vulkan-Samples)
